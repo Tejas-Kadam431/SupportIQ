@@ -1,0 +1,81 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  AGENT
+  CUSTOMER
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  avatarUrl    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ownedOrganizations Organization[]       @relation("OrganizationOwner")
+  memberships        OrganizationMember[]
+  refreshTokens      RefreshToken[]
+
+  @@index([email])
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String
+  expiresAt DateTime
+  revokedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+}
+
+model Organization {
+  id      String @id @default(cuid())
+  name    String
+  slug    String @unique
+  ownerId String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  owner   User                 @relation("OrganizationOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  members OrganizationMember[]
+
+  @@index([ownerId])
+  @@index([slug])
+}
+
+model OrganizationMember {
+  id             String @id @default(cuid())
+  organizationId String
+  userId         String
+  role           Role
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([organizationId])
+  @@index([userId])
+  @@index([role])
+}
