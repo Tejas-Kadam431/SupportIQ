@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "../app/hooks";
 import { clearCredentials } from "../features/auth/authSlice";
 import { useLogoutMutation } from "../features/auth/authApi";
@@ -10,9 +10,14 @@ export function DashboardPage() {
   const [logout, { isLoading }] = useLogoutMutation();
 
   async function handleLogout() {
-    await logout().unwrap();
-    dispatch(clearCredentials());
-    navigate("/login");
+    try {
+      await logout().unwrap();
+    } catch (error) {
+      console.error("Logout failed:", error);
+    } finally {
+      dispatch(clearCredentials());
+      navigate("/login");
+    }
   }
 
   return (
@@ -20,6 +25,10 @@ export function DashboardPage() {
       <h1>SupportIQ Dashboard</h1>
       <p>Welcome, {user?.name}</p>
       <p>This page is protected.</p>
+
+      <nav style={{ display: "flex", gap: "1rem", marginBottom: "1rem" }}>
+        <Link to="/organizations">Organizations</Link>
+      </nav>
 
       <button onClick={handleLogout} disabled={isLoading}>
         {isLoading ? "Logging out..." : "Logout"}
