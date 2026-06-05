@@ -12,6 +12,16 @@ export type OrgRequest = AuthenticatedRequest & {
   };
 };
 
+function getOrgId(req: OrgRequest) {
+  const orgId = req.params.orgId;
+
+  if (typeof orgId !== "string") {
+    throw new AppError("Organization id is required", 400);
+  }
+
+  return orgId;
+}
+
 export function requireOrgMember() {
   return async (req: OrgRequest, _res: Response, next: NextFunction) => {
     try {
@@ -19,11 +29,7 @@ export function requireOrgMember() {
         throw new AppError("Authentication required", 401);
       }
 
-      const orgId = req.params.orgId;
-
-      if (!orgId) {
-        throw new AppError("Organization id is required", 400);
-      }
+      const orgId = getOrgId(req);
 
       const membership = await assertOrgMember(req.user.id, orgId);
 
@@ -46,11 +52,7 @@ export function requireOrgRole(allowedRoles: OrganizationRole[]) {
         throw new AppError("Authentication required", 401);
       }
 
-      const orgId = req.params.orgId;
-
-      if (!orgId) {
-        throw new AppError("Organization id is required", 400);
-      }
+      const orgId = getOrgId(req);
 
       const membership = await assertOrgRole(req.user.id, orgId, allowedRoles);
 

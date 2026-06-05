@@ -20,6 +20,16 @@ function getUserId(req: AuthenticatedRequest) {
   return req.user.id;
 }
 
+function getParam(req: AuthenticatedRequest, key: string) {
+  const value = req.params[key];
+
+  if (typeof value !== "string") {
+    throw new AppError(`${key} parameter is required`, 400);
+  }
+
+  return value;
+}
+
 export async function createOrg(req: AuthenticatedRequest, res: Response) {
   const userId = getUserId(req);
   const organization = await createOrganization(userId, req.body);
@@ -45,7 +55,9 @@ export async function listOrgs(req: AuthenticatedRequest, res: Response) {
 
 export async function getOrg(req: AuthenticatedRequest, res: Response) {
   const userId = getUserId(req);
-  const result = await getOrganizationById(userId, req.params.orgId);
+  const orgId = getParam(req, "orgId");
+
+  const result = await getOrganizationById(userId, orgId);
 
   return res.status(200).json({
     data: result
@@ -54,7 +66,9 @@ export async function getOrg(req: AuthenticatedRequest, res: Response) {
 
 export async function updateOrg(req: AuthenticatedRequest, res: Response) {
   const userId = getUserId(req);
-  const organization = await updateOrganization(userId, req.params.orgId, req.body);
+  const orgId = getParam(req, "orgId");
+
+  const organization = await updateOrganization(userId, orgId, req.body);
 
   return res.status(200).json({
     message: "Organization updated successfully",
@@ -66,7 +80,9 @@ export async function updateOrg(req: AuthenticatedRequest, res: Response) {
 
 export async function listMembers(req: AuthenticatedRequest, res: Response) {
   const userId = getUserId(req);
-  const members = await listOrganizationMembers(userId, req.params.orgId);
+  const orgId = getParam(req, "orgId");
+
+  const members = await listOrganizationMembers(userId, orgId);
 
   return res.status(200).json({
     data: {
@@ -77,7 +93,9 @@ export async function listMembers(req: AuthenticatedRequest, res: Response) {
 
 export async function addMember(req: AuthenticatedRequest, res: Response) {
   const userId = getUserId(req);
-  const member = await addOrganizationMember(userId, req.params.orgId, req.body);
+  const orgId = getParam(req, "orgId");
+
+  const member = await addOrganizationMember(userId, orgId, req.body);
 
   return res.status(201).json({
     message: "Member added successfully",
@@ -89,11 +107,13 @@ export async function addMember(req: AuthenticatedRequest, res: Response) {
 
 export async function updateMemberRole(req: AuthenticatedRequest, res: Response) {
   const userId = getUserId(req);
+  const orgId = getParam(req, "orgId");
+  const memberId = getParam(req, "memberId");
 
   const member = await updateOrganizationMemberRole(
     userId,
-    req.params.orgId,
-    req.params.memberId,
+    orgId,
+    memberId,
     req.body
   );
 
@@ -107,8 +127,10 @@ export async function updateMemberRole(req: AuthenticatedRequest, res: Response)
 
 export async function removeMember(req: AuthenticatedRequest, res: Response) {
   const userId = getUserId(req);
+  const orgId = getParam(req, "orgId");
+  const memberId = getParam(req, "memberId");
 
-  await removeOrganizationMember(userId, req.params.orgId, req.params.memberId);
+  await removeOrganizationMember(userId, orgId, memberId);
 
   return res.status(200).json({
     message: "Member removed successfully"
