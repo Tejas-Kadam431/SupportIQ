@@ -14,10 +14,35 @@ enum Role {
   CUSTOMER
 }
 
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum ActivityType {
+  TICKET_CREATED
+  TICKET_ASSIGNED
+  STATUS_CHANGED
+  MESSAGE_SENT
+  INTERNAL_NOTE_ADDED
+  AI_REPLY_GENERATED
+  DOCUMENT_UPLOADED
+}
+
 model User {
-  id           String   @id @default(cuid())
+  id           String  @id @default(cuid())
   name         String
-  email        String   @unique
+  email        String  @unique
   passwordHash String
   avatarUrl    String?
 
@@ -27,6 +52,12 @@ model User {
   ownedOrganizations Organization[]       @relation("OrganizationOwner")
   memberships        OrganizationMember[]
   refreshTokens      RefreshToken[]
+
+  customerTickets Ticket[]        @relation("TicketCustomer")
+  assignedTickets Ticket[]        @relation("TicketAssignee")
+  ticketMessages  TicketMessage[] @relation("TicketMessageSender")
+  internalNotes   InternalNote[]  @relation("InternalNoteAuthor")
+  activityLogs    ActivityLog[]   @relation("ActivityActor")
 
   @@index([email])
 }
@@ -58,6 +89,9 @@ model Organization {
   owner   User                 @relation("OrganizationOwner", fields: [ownerId], references: [id], onDelete: Restrict)
   members OrganizationMember[]
 
+  tickets      Ticket[]
+  activityLogs ActivityLog[]
+
   @@index([ownerId])
   @@index([slug])
 }
@@ -78,4 +112,95 @@ model OrganizationMember {
   @@index([organizationId])
   @@index([userId])
   @@index([role])
+}
+
+model Ticket {
+  id             String  @id @default(cuid())
+  organizationId String
+  customerId     String
+  assigneeId     String?
+
+  title       String
+  description String
+  status      TicketStatus   @default(OPEN)
+  priority    TicketPriority @default(MEDIUM)
+
+  firstResponseAt DateTime?
+  resolvedAt      DateTime?
+  closedAt        DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer     User         @relation("TicketCustomer", fields: [customerId], references: [id], onDelete: Restrict)
+  assignee     User?        @relation("TicketAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+
+  messages      TicketMessage[]
+  internalNotes InternalNote[]
+  activityLogs  ActivityLog[]
+
+  @@index([organizationId])
+  @@index([customerId])
+  @@index([assigneeId])
+  @@index([status])
+  @@index([priority])
+  @@index([createdAt])
+}
+
+model TicketMessage {
+  id       String @id @default(cuid())
+  ticketId String
+  senderId String
+  body     String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  sender User   @relation("TicketMessageSender", fields: [senderId], references: [id], onDelete: Restrict)
+
+  @@index([ticketId])
+  @@index([senderId])
+  @@index([createdAt])
+}
+
+model InternalNote {
+  id       String @id @default(cuid())
+  ticketId String
+  authorId String
+  body     String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author User   @relation("InternalNoteAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([ticketId])
+  @@index([authorId])
+  @@index([createdAt])
+}
+
+model ActivityLog {
+  id             String  @id @default(cuid())
+  organizationId String
+  ticketId       String?
+  actorId        String?
+
+  type     ActivityType
+  message  String
+  metadata Json?
+
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  ticket       Ticket?      @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  actor        User?        @relation("ActivityActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([ticketId])
+  @@index([actorId])
+  @@index([type])
+  @@index([createdAt])
 }

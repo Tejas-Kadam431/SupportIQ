@@ -6,6 +6,7 @@ import cookieParser from "cookie-parser";
 import { authRoutes } from "./modules/auth/auth.routes.js";
 import { errorHandler } from "./common/errors/errorHandler.js";
 import { orgRoutes } from "./modules/organizations/org.routes.js";
+import { ticketRoutes } from "./modules/tickets/ticket.routes.js";
 
 export const app = express();
 
@@ -31,7 +32,7 @@ app.get("/health", (_req, res) => {
 
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/organizations", orgRoutes);
-
+app.use("/api/v1/organizations/:orgId/tickets", ticketRoutes);
 app.use((_req, res) => {
   res.status(404).json({
     message: "Route not found"

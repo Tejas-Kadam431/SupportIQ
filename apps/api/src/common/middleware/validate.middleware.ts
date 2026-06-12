@@ -1,13 +1,13 @@
 import type { NextFunction, Request, Response } from "express";
-import type { z } from "zod";
+import type { ZodSchema } from "zod";
 
-type RequestValidationSchema = z.ZodType<{
+type ParsedRequestParts = {
   body?: unknown;
-  params?: Request["params"];
-  query?: Request["query"];
-}>;
+  params?: unknown;
+  query?: unknown;
+};
 
-export function validate(schema: RequestValidationSchema) {
+export function validate(schema: ZodSchema) {
   return (req: Request, _res: Response, next: NextFunction) => {
     const result = schema.safeParse({
       body: req.body,
@@ -19,11 +19,14 @@ export function validate(schema: RequestValidationSchema) {
       return next(result.error);
     }
 
-    const data = result.data;
+    const parsedData = result.data as ParsedRequestParts;
 
-    if (data.body !== undefined) req.body = data.body;
-    if (data.params !== undefined) req.params = data.params;
-    if (data.query !== undefined) req.query = data.query;
+    if (parsedData.body !== undefined) {
+      req.body = parsedData.body;
+    }
+
+    // Do not assign req.query in Express 5 because it is read-only.
+    // Do not assign req.params either; route params are already available.
 
     next();
   };
