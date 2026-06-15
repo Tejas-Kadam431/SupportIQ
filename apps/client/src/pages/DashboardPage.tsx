@@ -26,9 +26,10 @@ export function DashboardPage() {
       <p>Welcome, {user?.name}</p>
       <p>This page is protected.</p>
 
-      <nav style={{ display: "flex", gap: "1rem", marginBottom: "1rem" }}>
-        <Link to="/organizations">Organizations</Link>
-      </nav>
+    <nav style={{ display: "flex", gap: "1rem", marginBottom: "1rem" }}>
+      <Link to="/organizations">Organizations</Link>
+      <Link to="/tickets">Tickets</Link>
+    </nav>
 
       <button onClick={handleLogout} disabled={isLoading}>
         {isLoading ? "Logging out..." : "Logout"}
