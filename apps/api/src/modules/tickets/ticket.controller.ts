@@ -1,7 +1,13 @@
 import type { Response } from "express";
 import type { AuthenticatedRequest } from "../../common/middleware/auth.middleware.js";
 import { AppError } from "../../common/errors/AppError.js";
-import { createTicket, listTickets } from "./ticket.service.js";
+import {
+  assignTicket,
+  createTicket,
+  getTicketDetails,
+  listTickets,
+  updateTicketStatus
+} from "./ticket.service.js";
 import type { ListTicketsQuery } from "./ticket.schema.js";
 
 function getUserId(req: AuthenticatedRequest) {
@@ -44,5 +50,46 @@ export async function listTicketsHandler(req: AuthenticatedRequest, res: Respons
 
   return res.status(200).json({
     data: result
+  });
+}
+
+export async function getTicketDetailsHandler(req: AuthenticatedRequest, res: Response) {
+  const userId = getUserId(req);
+  const ticketId = getParam(req, "ticketId");
+
+  const ticket = await getTicketDetails(userId, ticketId);
+
+  return res.status(200).json({
+    data: {
+      ticket
+    }
+  });
+}
+
+export async function updateTicketStatusHandler(req: AuthenticatedRequest, res: Response) {
+  const userId = getUserId(req);
+  const ticketId = getParam(req, "ticketId");
+
+  const ticket = await updateTicketStatus(userId, ticketId, req.body);
+
+  return res.status(200).json({
+    message: "Ticket status updated successfully",
+    data: {
+      ticket
+    }
+  });
+}
+
+export async function assignTicketHandler(req: AuthenticatedRequest, res: Response) {
+  const userId = getUserId(req);
+  const ticketId = getParam(req, "ticketId");
+
+  const ticket = await assignTicket(userId, ticketId, req.body);
+
+  return res.status(200).json({
+    message: "Ticket assignment updated successfully",
+    data: {
+      ticket
+    }
   });
 }

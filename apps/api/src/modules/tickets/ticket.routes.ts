@@ -3,15 +3,49 @@ import { authenticate } from "../../common/middleware/auth.middleware.js";
 import { validate } from "../../common/middleware/validate.middleware.js";
 import { asyncHandler } from "../../common/utils/asyncHandler.js";
 import { requireOrgMember } from "../organizations/org.rbac.js";
-import { createTicketHandler, listTicketsHandler } from "./ticket.controller.js";
-import { createTicketSchema, listTicketsSchema } from "./ticket.schema.js";
+import {
+  assignTicketHandler,
+  createTicketHandler,
+  getTicketDetailsHandler,
+  listTicketsHandler,
+  updateTicketStatusHandler
+} from "./ticket.controller.js";
+import {
+  assignTicketSchema,
+  createTicketSchema,
+  listTicketsSchema,
+  ticketIdParamSchema,
+  updateTicketStatusSchema
+} from "./ticket.schema.js";
 
-export const ticketRoutes = Router({
+export const orgTicketRoutes = Router({
   mergeParams: true
 });
 
-ticketRoutes.use(authenticate);
-ticketRoutes.use(requireOrgMember());
+orgTicketRoutes.use(authenticate);
+orgTicketRoutes.use(requireOrgMember());
 
-ticketRoutes.post("/", validate(createTicketSchema), asyncHandler(createTicketHandler));
-ticketRoutes.get("/", validate(listTicketsSchema), asyncHandler(listTicketsHandler));
+orgTicketRoutes.post("/", validate(createTicketSchema), asyncHandler(createTicketHandler));
+orgTicketRoutes.get("/", validate(listTicketsSchema), asyncHandler(listTicketsHandler));
+
+export const ticketRoutes = Router();
+
+ticketRoutes.use(authenticate);
+
+ticketRoutes.get(
+  "/:ticketId",
+  validate(ticketIdParamSchema),
+  asyncHandler(getTicketDetailsHandler)
+);
+
+ticketRoutes.patch(
+  "/:ticketId/status",
+  validate(updateTicketStatusSchema),
+  asyncHandler(updateTicketStatusHandler)
+);
+
+ticketRoutes.patch(
+  "/:ticketId/assign",
+  validate(assignTicketSchema),
+  asyncHandler(assignTicketHandler)
+);
