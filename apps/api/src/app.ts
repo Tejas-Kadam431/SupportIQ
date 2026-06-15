@@ -7,6 +7,8 @@ import { authRoutes } from "./modules/auth/auth.routes.js";
 import { errorHandler } from "./common/errors/errorHandler.js";
 import { orgRoutes } from "./modules/organizations/org.routes.js";
 import { orgTicketRoutes, ticketRoutes } from "./modules/tickets/ticket.routes.js";
+import { messageRoutes } from "./modules/messages/message.routes.js";
+import { noteRoutes } from "./modules/notes/note.routes.js";
 
 export const app = express();
 
@@ -33,6 +35,8 @@ app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/organizations", orgRoutes);
 app.use("/api/v1/organizations/:orgId/tickets", orgTicketRoutes);
 app.use("/api/v1/tickets", ticketRoutes);
+app.use("/api/v1/tickets/:ticketId/messages", messageRoutes);
+app.use("/api/v1/tickets/:ticketId/notes", noteRoutes);
 app.use((_req, res) => {
   res.status(404).json({
     message: "Route not found"
