@@ -8,7 +8,8 @@ import {
   useGetTicketQuery,
   useUpdateTicketStatusMutation
 } from "./ticketsApi";
-
+import { MessageThread } from "./MessageThread";
+import { InternalNotes } from "./InternalNotes";
 const statuses: TicketStatus[] = [
   "OPEN",
   "IN_PROGRESS",
@@ -221,27 +222,8 @@ export function TicketDetailsPage() {
           gap: "1rem"
         }}
       >
-        <div
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: 8,
-            padding: "1rem"
-          }}
-        >
-          <h2>Messages</h2>
-          <p>Message thread UI comes next.</p>
-        </div>
-
-        <div
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: 8,
-            padding: "1rem"
-          }}
-        >
-          <h2>Internal Notes</h2>
-          <p>Internal notes UI comes next.</p>
-        </div>
+        <MessageThread ticketId={ticket.id} />
+        <InternalNotes ticketId={ticket.id} />
       </section>
     </main>
   );
