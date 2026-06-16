@@ -16,6 +16,12 @@ export type UserSummary = {
   avatarUrl: string | null;
 };
 
+export type OrganizationSummary = {
+  id: string;
+  name: string;
+  slug: string;
+};
+
 export type TicketListItem = {
   id: string;
   organizationId: string;
@@ -38,6 +44,10 @@ export type TicketListItem = {
   };
 };
 
+export type TicketDetails = TicketListItem & {
+  organization: OrganizationSummary;
+};
+
 export type TicketPagination = {
   page: number;
   limit: number;
@@ -49,6 +59,19 @@ export type ListTicketsResponse = {
   data: {
     tickets: TicketListItem[];
     pagination: TicketPagination;
+  };
+};
+
+export type GetTicketResponse = {
+  data: {
+    ticket: TicketDetails;
+  };
+};
+
+export type UpdateTicketResponse = {
+  message: string;
+  data: {
+    ticket: TicketDetails;
   };
 };
 
@@ -83,8 +106,51 @@ export const ticketsApi = api.injectEndpoints({
         return `/organizations/${orgId}/tickets${queryString ? `?${queryString}` : ""}`;
       },
       providesTags: ["Tickets"]
+    }),
+
+    getTicket: builder.query<GetTicketResponse, string>({
+      query: (ticketId) => `/tickets/${ticketId}`,
+      providesTags: (_result, _error, ticketId) => [
+        "Tickets",
+        { type: "Tickets", id: ticketId }
+      ]
+    }),
+
+    updateTicketStatus: builder.mutation<
+      UpdateTicketResponse,
+      { ticketId: string; status: TicketStatus }
+    >({
+      query: ({ ticketId, status }) => ({
+        url: `/tickets/${ticketId}/status`,
+        method: "PATCH",
+        body: { status }
+      }),
+      invalidatesTags: (_result, _error, { ticketId }) => [
+        "Tickets",
+        { type: "Tickets", id: ticketId }
+      ]
+    }),
+
+    assignTicket: builder.mutation<
+      UpdateTicketResponse,
+      { ticketId: string; assigneeId: string | null }
+    >({
+      query: ({ ticketId, assigneeId }) => ({
+        url: `/tickets/${ticketId}/assign`,
+        method: "PATCH",
+        body: { assigneeId }
+      }),
+      invalidatesTags: (_result, _error, { ticketId }) => [
+        "Tickets",
+        { type: "Tickets", id: ticketId }
+      ]
     })
   })
 });
 
-export const { useListTicketsQuery } = ticketsApi;
+export const {
+  useListTicketsQuery,
+  useGetTicketQuery,
+  useUpdateTicketStatusMutation,
+  useAssignTicketMutation
+} = ticketsApi;

@@ -6,6 +6,7 @@ import { ProtectedRoute } from "./ProtectedRoute";
 import { OrganizationsPage } from "../features/organizations/OrganizationsPage";
 import { MembersPage } from "../features/organizations/MembersPage";
 import { TicketsPage } from "../features/tickets/TicketsPage";
+import { TicketDetailsPage } from "../features/tickets/TicketDetailsPage";
 
 export const router = createBrowserRouter([
   {
@@ -38,6 +39,10 @@ export const router = createBrowserRouter([
       {
         path: "/tickets",
         element: <TicketsPage />
+      },
+      {
+        path: "/tickets/:ticketId",
+        element: <TicketDetailsPage />
       }
     ]
   }
