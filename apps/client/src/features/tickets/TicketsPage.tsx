@@ -82,6 +82,7 @@ export function TicketsPage() {
         <p>View, search, and filter customer support tickets.</p>
 
         <nav style={{ display: "flex", gap: "1rem" }}>
+          <Link to="/tickets/new">Create ticket</Link>
           <Link to="/dashboard">Dashboard</Link>
           <Link to="/organizations">Organizations</Link>
         </nav>

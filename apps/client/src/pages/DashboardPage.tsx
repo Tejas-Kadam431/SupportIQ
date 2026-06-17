@@ -29,6 +29,7 @@ export function DashboardPage() {
     <nav style={{ display: "flex", gap: "1rem", marginBottom: "1rem" }}>
       <Link to="/organizations">Organizations</Link>
       <Link to="/tickets">Tickets</Link>
+      <Link to="/tickets/new">Create Ticket</Link>
     </nav>
 
       <button onClick={handleLogout} disabled={isLoading}>

@@ -84,6 +84,19 @@ export type ListTicketsParams = {
   search?: string;
   sort?: string;
 };
+export type CreateTicketRequest = {
+  orgId: string;
+  title: string;
+  description: string;
+  priority?: TicketPriority;
+};
+
+export type CreateTicketResponse = {
+  message: string;
+  data: {
+    ticket: TicketListItem;
+  };
+};
 
 function buildQueryString(params: Omit<ListTicketsParams, "orgId">) {
   const searchParams = new URLSearchParams();
@@ -107,7 +120,14 @@ export const ticketsApi = api.injectEndpoints({
       },
       providesTags: ["Tickets"]
     }),
-
+    createTicket: builder.mutation<CreateTicketResponse, CreateTicketRequest>({
+      query: ({ orgId, ...body }) => ({
+        url: `/organizations/${orgId}/tickets`,
+        method: "POST",
+        body
+      }),
+      invalidatesTags: ["Tickets"]
+    }),
     getTicket: builder.query<GetTicketResponse, string>({
       query: (ticketId) => `/tickets/${ticketId}`,
       providesTags: (_result, _error, ticketId) => [
@@ -149,6 +169,7 @@ export const ticketsApi = api.injectEndpoints({
 });
 
 export const {
+  useCreateTicketMutation,
   useListTicketsQuery,
   useGetTicketQuery,
   useUpdateTicketStatusMutation,

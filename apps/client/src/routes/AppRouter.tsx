@@ -7,6 +7,7 @@ import { OrganizationsPage } from "../features/organizations/OrganizationsPage";
 import { MembersPage } from "../features/organizations/MembersPage";
 import { TicketsPage } from "../features/tickets/TicketsPage";
 import { TicketDetailsPage } from "../features/tickets/TicketDetailsPage";
+import { CreateTicketPage } from "../features/tickets/CreateTicketPage";
 
 export const router = createBrowserRouter([
   {
@@ -35,6 +36,10 @@ export const router = createBrowserRouter([
       {
         path: "/organizations/:orgId/members",
         element: <MembersPage />
+      },
+      {
+        path: "/tickets/new",
+        element: <CreateTicketPage />
       },
       {
         path: "/tickets",
