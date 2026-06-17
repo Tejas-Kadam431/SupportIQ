@@ -1,6 +1,7 @@
 import fs from "fs/promises";
 import { prisma } from "../../config/prisma.js";
 import { AppError } from "../../common/errors/AppError.js";
+import { processKnowledgeDocument } from "./kb.processor.js";
 
 type UploadedFileInput = {
   fileName: string;
@@ -34,11 +35,18 @@ export async function createKnowledgeDocument(
           email: true,
           avatarUrl: true
         }
+      },
+      _count: {
+        select: {
+          chunks: true
+        }
       }
     }
   });
 
-  return document;
+  await processKnowledgeDocument(document.id);
+
+  return getKnowledgeDocument(orgId, document.id);
 }
 
 export async function listKnowledgeDocuments(orgId: string) {
@@ -53,6 +61,11 @@ export async function listKnowledgeDocuments(orgId: string) {
           name: true,
           email: true,
           avatarUrl: true
+        }
+      },
+      _count: {
+        select: {
+          chunks: true
         }
       }
     },
@@ -74,6 +87,23 @@ export async function getKnowledgeDocument(orgId: string, documentId: string) {
           name: true,
           email: true,
           avatarUrl: true
+        }
+      },
+      chunks: {
+        orderBy: {
+          chunkIndex: "asc"
+        },
+        select: {
+          id: true,
+          chunkIndex: true,
+          content: true,
+          tokenCount: true,
+          createdAt: true
+        }
+      },
+      _count: {
+        select: {
+          chunks: true
         }
       }
     }

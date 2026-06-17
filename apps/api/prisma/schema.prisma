@@ -100,6 +100,7 @@ model Organization {
   tickets            Ticket[]
   activityLogs       ActivityLog[]
   knowledgeDocuments KnowledgeDocument[]
+  knowledgeChunks    KnowledgeChunk[]
 
   @@index([ownerId])
   @@index([slug])
@@ -234,8 +235,31 @@ model KnowledgeDocument {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   uploadedBy   User         @relation("KnowledgeDocumentUploader", fields: [uploadedById], references: [id], onDelete: Restrict)
 
+  chunks KnowledgeChunk[]
+
   @@index([organizationId])
   @@index([uploadedById])
   @@index([status])
+  @@index([createdAt])
+}
+
+model KnowledgeChunk {
+  id             String @id @default(cuid())
+  documentId     String
+  organizationId String
+
+  content    String
+  chunkIndex Int
+  tokenCount Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  document     KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, chunkIndex])
+  @@index([documentId])
+  @@index([organizationId])
   @@index([createdAt])
 }
