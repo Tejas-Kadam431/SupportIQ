@@ -29,6 +29,13 @@ enum TicketPriority {
   URGENT
 }
 
+enum KnowledgeDocumentStatus {
+  UPLOADED
+  PROCESSING
+  READY
+  FAILED
+}
+
 enum ActivityType {
   TICKET_CREATED
   TICKET_ASSIGNED
@@ -53,11 +60,12 @@ model User {
   memberships        OrganizationMember[]
   refreshTokens      RefreshToken[]
 
-  customerTickets Ticket[]        @relation("TicketCustomer")
-  assignedTickets Ticket[]        @relation("TicketAssignee")
-  ticketMessages  TicketMessage[] @relation("TicketMessageSender")
-  internalNotes   InternalNote[]  @relation("InternalNoteAuthor")
-  activityLogs    ActivityLog[]   @relation("ActivityActor")
+  customerTickets            Ticket[]            @relation("TicketCustomer")
+  assignedTickets            Ticket[]            @relation("TicketAssignee")
+  ticketMessages             TicketMessage[]     @relation("TicketMessageSender")
+  internalNotes              InternalNote[]      @relation("InternalNoteAuthor")
+  activityLogs               ActivityLog[]       @relation("ActivityActor")
+  uploadedKnowledgeDocuments KnowledgeDocument[] @relation("KnowledgeDocumentUploader")
 
   @@index([email])
 }
@@ -89,8 +97,9 @@ model Organization {
   owner   User                 @relation("OrganizationOwner", fields: [ownerId], references: [id], onDelete: Restrict)
   members OrganizationMember[]
 
-  tickets      Ticket[]
-  activityLogs ActivityLog[]
+  tickets            Ticket[]
+  activityLogs       ActivityLog[]
+  knowledgeDocuments KnowledgeDocument[]
 
   @@index([ownerId])
   @@index([slug])
@@ -202,5 +211,31 @@ model ActivityLog {
   @@index([ticketId])
   @@index([actorId])
   @@index([type])
+  @@index([createdAt])
+}
+
+model KnowledgeDocument {
+  id             String @id @default(cuid())
+  organizationId String
+  uploadedById   String
+
+  fileName     String
+  originalName String
+  mimeType     String
+  sizeBytes    Int
+  storagePath  String
+
+  status       KnowledgeDocumentStatus @default(UPLOADED)
+  errorMessage String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  uploadedBy   User         @relation("KnowledgeDocumentUploader", fields: [uploadedById], references: [id], onDelete: Restrict)
+
+  @@index([organizationId])
+  @@index([uploadedById])
+  @@index([status])
   @@index([createdAt])
 }
