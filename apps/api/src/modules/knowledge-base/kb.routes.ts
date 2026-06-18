@@ -9,9 +9,14 @@ import {
   listChunksHandler,
   listDocumentsHandler,
   reprocessDocumentHandler,
+  searchKnowledgeHandler,
   uploadDocumentHandler
 } from "./kb.controller.js";
-import { documentIdParamSchema, orgIdParamSchema } from "./kb.schema.js";
+import {
+  documentIdParamSchema,
+  orgIdParamSchema,
+  searchKnowledgeSchema
+} from "./kb.schema.js";
 import { uploadKnowledgeDocument } from "./kb.upload.js";
 
 export const kbRoutes = Router({
@@ -19,6 +24,13 @@ export const kbRoutes = Router({
 });
 
 kbRoutes.use(authenticate);
+
+kbRoutes.get(
+  "/search",
+  validate(searchKnowledgeSchema),
+  requireOrgRole(["OWNER", "ADMIN", "AGENT"]),
+  asyncHandler(searchKnowledgeHandler)
+);
 
 kbRoutes.get(
   "/documents",

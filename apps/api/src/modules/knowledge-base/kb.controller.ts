@@ -7,8 +7,10 @@ import {
   getKnowledgeDocument,
   listKnowledgeChunks,
   listKnowledgeDocuments,
-  reprocessKnowledgeDocument
+  reprocessKnowledgeDocument,
+  searchKnowledgeBase
 } from "./kb.service.js";
+import type { SearchKnowledgeQuery } from "./kb.schema.js";
 
 function getUserId(req: AuthenticatedRequest) {
   if (!req.user) {
@@ -61,6 +63,19 @@ export async function listDocumentsHandler(req: AuthenticatedRequest, res: Respo
     data: {
       documents
     }
+  });
+}
+
+export async function searchKnowledgeHandler(req: AuthenticatedRequest, res: Response) {
+  const orgId = getParam(req, "orgId");
+
+  const result = await searchKnowledgeBase(
+    orgId,
+    req.query as unknown as SearchKnowledgeQuery
+  );
+
+  return res.status(200).json({
+    data: result
   });
 }
 

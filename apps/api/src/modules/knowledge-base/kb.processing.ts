@@ -32,6 +32,14 @@ export async function processKnowledgeDocument(orgId: string, documentId: string
       throw new AppError("No readable text found in document", 400);
     }
 
+    const chunkRows = chunks.map((chunk) => ({
+      organizationId: orgId,
+      documentId: document.id,
+      chunkIndex: chunk.chunkIndex,
+      content: chunk.content,
+      tokenCount: chunk.tokenCount
+    }));
+
     await prisma.$transaction(async (tx) => {
       await tx.knowledgeChunk.deleteMany({
         where: {
@@ -40,13 +48,7 @@ export async function processKnowledgeDocument(orgId: string, documentId: string
       });
 
       await tx.knowledgeChunk.createMany({
-        data: chunks.map((chunk) => ({
-          organizationId: orgId,
-          documentId: document.id,
-          chunkIndex: chunk.chunkIndex,
-          content: chunk.content,
-          charCount: chunk.charCount
-        }))
+        data: chunkRows
       });
 
       await tx.knowledgeDocument.update({

@@ -6,7 +6,7 @@ type ChunkTextOptions = {
 export type TextChunk = {
   chunkIndex: number;
   content: string;
-  charCount: number;
+  tokenCount: number;
 };
 
 const DEFAULT_CHUNK_SIZE = 1200;
@@ -38,7 +38,7 @@ export function chunkText(text: string, options: ChunkTextOptions = {}): TextChu
       chunks.push({
         chunkIndex,
         content,
-        charCount: content.length
+        tokenCount: estimateTokenCount(content)
       });
 
       chunkIndex += 1;
@@ -52,6 +52,10 @@ export function chunkText(text: string, options: ChunkTextOptions = {}): TextChu
   }
 
   return chunks;
+}
+
+function estimateTokenCount(text: string) {
+  return Math.ceil(text.length / 4);
 }
 
 function findNaturalBreak(text: string, start: number, rawEnd: number) {
