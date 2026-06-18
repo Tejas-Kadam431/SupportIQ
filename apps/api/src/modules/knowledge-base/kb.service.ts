@@ -1,7 +1,7 @@
 import fs from "fs/promises";
 import { prisma } from "../../config/prisma.js";
 import { AppError } from "../../common/errors/AppError.js";
-import { processKnowledgeDocument } from "./kb.processor.js";
+import { processKnowledgeDocument } from "./kb.processing.js";
 
 type UploadedFileInput = {
   fileName: string;
@@ -26,25 +26,10 @@ export async function createKnowledgeDocument(
       sizeBytes: input.sizeBytes,
       storagePath: input.storagePath,
       status: "UPLOADED"
-    },
-    include: {
-      uploadedBy: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          avatarUrl: true
-        }
-      },
-      _count: {
-        select: {
-          chunks: true
-        }
-      }
     }
   });
 
-  await processKnowledgeDocument(document.id);
+  await processKnowledgeDocument(orgId, document.id);
 
   return getKnowledgeDocument(orgId, document.id);
 }
@@ -89,18 +74,6 @@ export async function getKnowledgeDocument(orgId: string, documentId: string) {
           avatarUrl: true
         }
       },
-      chunks: {
-        orderBy: {
-          chunkIndex: "asc"
-        },
-        select: {
-          id: true,
-          chunkIndex: true,
-          content: true,
-          tokenCount: true,
-          createdAt: true
-        }
-      },
       _count: {
         select: {
           chunks: true
@@ -114,6 +87,28 @@ export async function getKnowledgeDocument(orgId: string, documentId: string) {
   }
 
   return document;
+}
+
+export async function listKnowledgeChunks(orgId: string, documentId: string) {
+  await getKnowledgeDocument(orgId, documentId);
+
+  return prisma.knowledgeChunk.findMany({
+    where: {
+      organizationId: orgId,
+      documentId
+    },
+    orderBy: {
+      chunkIndex: "asc"
+    }
+  });
+}
+
+export async function reprocessKnowledgeDocument(orgId: string, documentId: string) {
+  await getKnowledgeDocument(orgId, documentId);
+
+  await processKnowledgeDocument(orgId, documentId);
+
+  return getKnowledgeDocument(orgId, documentId);
 }
 
 export async function deleteKnowledgeDocument(orgId: string, documentId: string) {

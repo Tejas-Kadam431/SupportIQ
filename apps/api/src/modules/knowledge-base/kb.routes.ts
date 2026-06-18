@@ -6,7 +6,9 @@ import { requireOrgRole } from "../organizations/org.rbac.js";
 import {
   deleteDocumentHandler,
   getDocumentHandler,
+  listChunksHandler,
   listDocumentsHandler,
+  reprocessDocumentHandler,
   uploadDocumentHandler
 } from "./kb.controller.js";
 import { documentIdParamSchema, orgIdParamSchema } from "./kb.schema.js";
@@ -38,6 +40,20 @@ kbRoutes.get(
   validate(documentIdParamSchema),
   requireOrgRole(["OWNER", "ADMIN", "AGENT"]),
   asyncHandler(getDocumentHandler)
+);
+
+kbRoutes.get(
+  "/documents/:documentId/chunks",
+  validate(documentIdParamSchema),
+  requireOrgRole(["OWNER", "ADMIN", "AGENT"]),
+  asyncHandler(listChunksHandler)
+);
+
+kbRoutes.post(
+  "/documents/:documentId/process",
+  validate(documentIdParamSchema),
+  requireOrgRole(["OWNER", "ADMIN"]),
+  asyncHandler(reprocessDocumentHandler)
 );
 
 kbRoutes.delete(

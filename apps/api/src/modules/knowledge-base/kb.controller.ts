@@ -5,7 +5,9 @@ import {
   createKnowledgeDocument,
   deleteKnowledgeDocument,
   getKnowledgeDocument,
-  listKnowledgeDocuments
+  listKnowledgeChunks,
+  listKnowledgeDocuments,
+  reprocessKnowledgeDocument
 } from "./kb.service.js";
 
 function getUserId(req: AuthenticatedRequest) {
@@ -43,7 +45,7 @@ export async function uploadDocumentHandler(req: AuthenticatedRequest, res: Resp
   });
 
   return res.status(201).json({
-    message: "Document uploaded successfully",
+    message: "Document uploaded and processed successfully",
     data: {
       document
     }
@@ -69,6 +71,33 @@ export async function getDocumentHandler(req: AuthenticatedRequest, res: Respons
   const document = await getKnowledgeDocument(orgId, documentId);
 
   return res.status(200).json({
+    data: {
+      document
+    }
+  });
+}
+
+export async function listChunksHandler(req: AuthenticatedRequest, res: Response) {
+  const orgId = getParam(req, "orgId");
+  const documentId = getParam(req, "documentId");
+
+  const chunks = await listKnowledgeChunks(orgId, documentId);
+
+  return res.status(200).json({
+    data: {
+      chunks
+    }
+  });
+}
+
+export async function reprocessDocumentHandler(req: AuthenticatedRequest, res: Response) {
+  const orgId = getParam(req, "orgId");
+  const documentId = getParam(req, "documentId");
+
+  const document = await reprocessKnowledgeDocument(orgId, documentId);
+
+  return res.status(200).json({
+    message: "Document reprocessed successfully",
     data: {
       document
     }
