@@ -30,6 +30,7 @@ export function DashboardPage() {
       <Link to="/organizations">Organizations</Link>
       <Link to="/tickets">Tickets</Link>
       <Link to="/tickets/new">Create Ticket</Link>
+      <Link to="/knowledge-base">Knowledge Base</Link>
     </nav>
 
       <button onClick={handleLogout} disabled={isLoading}>

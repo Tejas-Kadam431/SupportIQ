@@ -8,6 +8,7 @@ import { MembersPage } from "../features/organizations/MembersPage";
 import { TicketsPage } from "../features/tickets/TicketsPage";
 import { TicketDetailsPage } from "../features/tickets/TicketDetailsPage";
 import { CreateTicketPage } from "../features/tickets/CreateTicketPage";
+import { KnowledgeBasePage } from "../features/knowledge-base/KnowledgeBasePage";
 
 export const router = createBrowserRouter([
   {
@@ -26,28 +27,20 @@ export const router = createBrowserRouter([
     element: <ProtectedRoute />,
     children: [
       {
-        path: "/dashboard",
-        element: <DashboardPage />
-      },
-      {
-        path: "/organizations",
-        element: <OrganizationsPage />
-      },
-      {
-        path: "/organizations/:orgId/members",
-        element: <MembersPage />
+        path: "/tickets",
+        element: <TicketsPage />
       },
       {
         path: "/tickets/new",
         element: <CreateTicketPage />
       },
       {
-        path: "/tickets",
-        element: <TicketsPage />
-      },
-      {
         path: "/tickets/:ticketId",
         element: <TicketDetailsPage />
+      },
+      {
+        path: "/knowledge-base",
+        element: <KnowledgeBasePage />
       }
     ]
   }
