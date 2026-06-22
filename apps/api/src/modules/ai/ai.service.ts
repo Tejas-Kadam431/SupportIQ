@@ -4,6 +4,7 @@ import { env } from "../../config/env.js";
 import { AppError } from "../../common/errors/AppError.js";
 import { getTicketOrThrow } from "../tickets/ticket.service.js";
 import { searchKnowledgeBase } from "../knowledge-base/kb.service.js";
+import type { GenerateAiDraftInput } from "./ai.schema.js";
 
 type Role = "OWNER" | "ADMIN" | "AGENT" | "CUSTOMER";
 
@@ -26,7 +27,15 @@ function buildSearchQuery(ticket: {
   title: string;
   description: string;
 }) {
-  return `${ticket.title} ${ticket.description}`.trim();
+  return `${ticket.title} ${ticket.description}`.trim().slice(0, 500);
+}
+
+function trimContent(content: string, maxLength = 1200) {
+  if (content.length <= maxLength) {
+    return content;
+  }
+
+  return `${content.slice(0, maxLength).trim()}...`;
 }
 
 function buildKnowledgeContext(sources: AiDraftSource[]) {
@@ -37,23 +46,106 @@ function buildKnowledgeContext(sources: AiDraftSource[]) {
   return sources
     .map(
       (source, index) =>
-        `Source ${index + 1}: ${source.documentName}\n${source.content}`
+        [
+          `Source ${index + 1}: ${source.documentName}`,
+          `Score: ${source.score}`,
+          trimContent(source.content)
+        ].join("\n")
     )
     .join("\n\n---\n\n");
 }
 
-function buildFallbackDraft(ticket: {
-  title: string;
-  description: string;
+function getToneInstruction(tone: GenerateAiDraftInput["tone"]) {
+  if (tone === "FRIENDLY") {
+    return "Use a warm, friendly, reassuring tone while staying professional.";
+  }
+
+  if (tone === "CONCISE") {
+    return "Use a concise tone. Keep the reply short, direct, and practical.";
+  }
+
+  return "Use a professional, clear, empathetic customer support tone.";
+}
+
+function calculateConfidence(sources: AiDraftSource[]) {
+  if (sources.length === 0) {
+    return "LOW" as const;
+  }
+
+  const bestScore = Math.max(...sources.map((source) => source.score));
+
+  if (sources.length >= 3 && bestScore >= 10) {
+    return "HIGH" as const;
+  }
+
+  if (sources.length >= 1 && bestScore >= 3) {
+    return "MEDIUM" as const;
+  }
+
+  return "LOW" as const;
+}
+
+function buildWarnings(args: {
+  sourceCount: number;
+  confidence: "LOW" | "MEDIUM" | "HIGH";
+  ticketStatus: string;
 }) {
+  const warnings: string[] = [];
+
+  if (args.sourceCount === 0) {
+    warnings.push("No matching knowledge-base sources were found.");
+  }
+
+  if (args.confidence === "LOW") {
+    warnings.push("AI confidence is low. Review carefully before sending.");
+  }
+
+  if (args.ticketStatus === "RESOLVED" || args.ticketStatus === "CLOSED") {
+    warnings.push("This ticket is already resolved or closed.");
+  }
+
+  return warnings;
+}
+
+function buildFallbackDraft(
+  ticket: {
+    title: string;
+    description: string;
+  },
+  tone: GenerateAiDraftInput["tone"]
+) {
+  if (tone === "CONCISE") {
+    return [
+      "Hi,",
+      "",
+      `Thanks for reaching out about "${ticket.title}".`,
+      "",
+      "We’re reviewing the issue and will help you resolve it as soon as possible. Please share any relevant screenshots, order IDs, or error messages so we can investigate faster.",
+      "",
+      "Best regards,",
+      "Support Team"
+    ].join("\n");
+  }
+
+  if (tone === "FRIENDLY") {
+    return [
+      "Hi,",
+      "",
+      `Thanks for reaching out about "${ticket.title}". I’m sorry you’re facing this issue.`,
+      "",
+      "We’ll take a look and help you get this resolved. Could you please share any screenshots, account details, order IDs, or exact error messages that may help us investigate?",
+      "",
+      "Best regards,",
+      "Support Team"
+    ].join("\n");
+  }
+
   return [
     "Hi,",
     "",
-    `Thanks for reaching out about: ${ticket.title}.`,
+    `Thank you for contacting us regarding "${ticket.title}".`,
     "",
-    "I understand the issue you described. We’re reviewing the details and will help you resolve this as soon as possible.",
-    "",
-    "Could you please share any additional screenshots, order IDs, account details, or exact error messages that may help us investigate faster?",
+    "We understand the issue you described and will review the details carefully. To help us investigate faster, please share any relevant screenshots, order IDs, account details, or exact error messages.",
     "",
     "Best regards,",
     "Support Team"
@@ -70,7 +162,11 @@ function getOpenAIClient() {
   });
 }
 
-export async function generateAiDraftReply(userId: string, ticketId: string) {
+export async function generateAiDraftReply(
+  userId: string,
+  ticketId: string,
+  input: GenerateAiDraftInput
+) {
   const { ticket, membership } = await getTicketOrThrow(userId, ticketId);
   const role = membership.role as Role;
 
@@ -133,31 +229,43 @@ export async function generateAiDraftReply(userId: string, ticketId: string) {
     content: result.content
   }));
 
+  const confidence = calculateConfidence(sources);
+
+  const warnings = buildWarnings({
+    sourceCount: sources.length,
+    confidence,
+    ticketStatus: ticketDetails.status
+  });
+
   const knowledgeContext = buildKnowledgeContext(sources);
+  const toneInstruction = getToneInstruction(input.tone);
   const openai = getOpenAIClient();
 
   let draft: string;
   let provider: "openai" | "fallback";
 
   if (!openai) {
-    draft = buildFallbackDraft(ticketDetails);
+    draft = buildFallbackDraft(ticketDetails, input.tone);
     provider = "fallback";
   } else {
     const recentMessages = ticketDetails.messages
-      .map(
-        (message) =>
-          `${message.sender.name}: ${message.body}`
-      )
+      .map((message) => `${message.sender.name}: ${message.body}`)
       .join("\n");
 
     const completion = await openai.chat.completions.create({
       model: env.OPENAI_MODEL,
-      temperature: 0.3,
+      temperature: 0.25,
       messages: [
         {
           role: "system",
-          content:
-            "You are a helpful customer support agent. Write concise, accurate, empathetic replies. Use the provided knowledge-base context when relevant. Do not invent policies, refunds, timelines, or technical facts not present in the context."
+          content: [
+            "You are a careful customer support agent.",
+            "Write helpful, accurate replies.",
+            "Do not invent policies, refunds, timelines, discounts, or technical facts.",
+            "Use the knowledge-base context only when relevant.",
+            "If the answer is uncertain, ask for more information instead of making claims.",
+            toneInstruction
+          ].join(" ")
         },
         {
           role: "user",
@@ -166,6 +274,7 @@ export async function generateAiDraftReply(userId: string, ticketId: string) {
             `Ticket title: ${ticketDetails.title}`,
             `Ticket description: ${ticketDetails.description}`,
             `Ticket status: ${ticketDetails.status}`,
+            `Ticket priority: ${ticketDetails.priority}`,
             "",
             "Recent conversation:",
             recentMessages || "No messages yet.",
@@ -173,7 +282,7 @@ export async function generateAiDraftReply(userId: string, ticketId: string) {
             "Knowledge-base context:",
             knowledgeContext,
             "",
-            "Write a polished support reply. Keep it practical and avoid overpromising."
+            "Write only the final customer-facing reply. Do not mention internal scores or source numbers."
           ].join("\n")
         }
       ]
@@ -181,7 +290,7 @@ export async function generateAiDraftReply(userId: string, ticketId: string) {
 
     draft =
       completion.choices[0]?.message?.content?.trim() ??
-      buildFallbackDraft(ticketDetails);
+      buildFallbackDraft(ticketDetails, input.tone);
 
     provider = "openai";
   }
@@ -196,7 +305,10 @@ export async function generateAiDraftReply(userId: string, ticketId: string) {
       metadata: {
         provider,
         sourceCount: sources.length,
-        searchQuery
+        searchQuery,
+        confidence,
+        warnings,
+        tone: input.tone
       }
     }
   });
@@ -204,6 +316,9 @@ export async function generateAiDraftReply(userId: string, ticketId: string) {
   return {
     draft,
     provider,
+    confidence,
+    warnings,
+    tone: input.tone,
     sources,
     ticket: {
       id: ticketDetails.id,

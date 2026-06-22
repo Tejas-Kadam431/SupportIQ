@@ -28,7 +28,7 @@ export async function generateAiDraftHandler(
   const userId = getUserId(req);
   const ticketId = getParam(req, "ticketId");
 
-  const result = await generateAiDraftReply(userId, ticketId);
+  const result = await generateAiDraftReply(userId, ticketId, req.body);
 
   return res.status(200).json({
     message: "AI draft generated successfully",

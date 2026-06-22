@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { useCreateMessageMutation } from "./messagesApi";
 import {
+  type AiDraftConfidence,
   type AiDraftSource,
+  type AiDraftTone,
   useGenerateAiDraftMutation
 } from "./aiApi";
 
@@ -9,9 +11,14 @@ type Props = {
   ticketId: string;
 };
 
+const tones: AiDraftTone[] = ["PROFESSIONAL", "FRIENDLY", "CONCISE"];
+
 export function AiDraftPanel({ ticketId }: Props) {
+  const [tone, setTone] = useState<AiDraftTone>("PROFESSIONAL");
   const [draft, setDraft] = useState("");
   const [provider, setProvider] = useState<"openai" | "fallback" | "">("");
+  const [confidence, setConfidence] = useState<AiDraftConfidence | "">("");
+  const [warnings, setWarnings] = useState<string[]>([]);
   const [sources, setSources] = useState<AiDraftSource[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
   const [copyMessage, setCopyMessage] = useState("");
@@ -26,10 +33,15 @@ export function AiDraftPanel({ ticketId }: Props) {
     setCopyMessage("");
 
     try {
-      const response = await generateAiDraft(ticketId).unwrap();
+      const response = await generateAiDraft({
+        ticketId,
+        tone
+      }).unwrap();
 
       setDraft(response.data.draft);
       setProvider(response.data.provider);
+      setConfidence(response.data.confidence);
+      setWarnings(response.data.warnings);
       setSources(response.data.sources);
     } catch (error) {
       console.error("Failed to generate AI draft:", error);
@@ -87,17 +99,46 @@ export function AiDraftPanel({ ticketId }: Props) {
       <h2>AI Draft Reply</h2>
 
       <p style={{ color: "#555" }}>
-        Generate a suggested reply using the ticket details and matching
+        Generate a suggested reply using ticket details and matching
         knowledge-base chunks.
       </p>
 
-      <button
-        type="button"
-        onClick={handleGenerateDraft}
-        disabled={isGenerating}
+      <div
+        style={{
+          display: "flex",
+          gap: "0.75rem",
+          alignItems: "end",
+          flexWrap: "wrap",
+          marginBottom: "1rem"
+        }}
       >
-        {isGenerating ? "Generating..." : "Generate AI draft"}
-      </button>
+        <label>
+          Tone
+          <select
+            value={tone}
+            onChange={(event) => setTone(event.target.value as AiDraftTone)}
+            style={{
+              display: "block",
+              padding: "0.6rem",
+              marginTop: "0.4rem"
+            }}
+          >
+            {tones.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <button
+          type="button"
+          onClick={handleGenerateDraft}
+          disabled={isGenerating}
+        >
+          {isGenerating ? "Generating..." : "Generate AI draft"}
+        </button>
+      </div>
 
       {errorMessage && <p style={{ color: "red" }}>{errorMessage}</p>}
 
@@ -106,14 +147,42 @@ export function AiDraftPanel({ ticketId }: Props) {
           <div
             style={{
               display: "flex",
-              gap: "0.75rem",
-              alignItems: "center",
+              gap: "1rem",
+              flexWrap: "wrap",
               marginBottom: "0.75rem"
             }}
           >
-            <strong>Provider:</strong>
-            <span>{provider}</span>
+            <span>
+              <strong>Provider:</strong> {provider}
+            </span>
+
+            <span>
+              <strong>Confidence:</strong> {confidence}
+            </span>
+
+            <span>
+              <strong>Tone:</strong> {tone}
+            </span>
           </div>
+
+          {warnings.length > 0 && (
+            <div
+              style={{
+                border: "1px solid #f0c36d",
+                borderRadius: 8,
+                padding: "0.75rem",
+                marginBottom: "0.75rem",
+                background: "#fff8e5"
+              }}
+            >
+              <strong>Review warnings</strong>
+              <ul>
+                {warnings.map((warning) => (
+                  <li key={warning}>{warning}</li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           <textarea
             value={draft}
@@ -190,8 +259,8 @@ export function AiDraftPanel({ ticketId }: Props) {
 
       {draft && sources.length === 0 && (
         <p style={{ marginTop: "1rem", color: "#555" }}>
-          No matching knowledge-base sources were found. The draft used the
-          fallback ticket-only response.
+          No matching knowledge-base sources were found. Review this draft
+          carefully before sending.
         </p>
       )}
     </section>
