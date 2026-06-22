@@ -10,6 +10,7 @@ import {
 } from "./ticketsApi";
 import { MessageThread } from "./MessageThread";
 import { InternalNotes } from "./InternalNotes";
+import { AiDraftPanel } from "./AiDraftPanel";
 const statuses: TicketStatus[] = [
   "OPEN",
   "IN_PROGRESS",
@@ -214,7 +215,7 @@ export function TicketDetailsPage() {
           </div>
         </div>
       </section>
-
+      <AiDraftPanel ticketId={ticket.id} />
       <section
         style={{
           display: "grid",
