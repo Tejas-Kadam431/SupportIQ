@@ -11,7 +11,15 @@ const envSchema = z.object({
   JWT_ACCESS_SECRET: z.string().min(1),
   JWT_REFRESH_SECRET: z.string().min(1),
   JWT_ACCESS_EXPIRES_IN: z.string().default("15m"),
-  JWT_REFRESH_EXPIRES_IN: z.string().default("7d")
+  JWT_REFRESH_EXPIRES_IN: z.string().default("7d"),
+  OPENAI_API_KEY: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.string().optional()
+  ),
+  OPENAI_MODEL: z.preprocess(
+    (value) => (value === "" || value === undefined ? "gpt-4o-mini" : value),
+    z.string()
+  ),
 });
 
 const parsedEnv = envSchema.safeParse(process.env);

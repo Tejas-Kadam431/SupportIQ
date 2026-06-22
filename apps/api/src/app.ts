@@ -10,6 +10,7 @@ import { orgTicketRoutes, ticketRoutes } from "./modules/tickets/ticket.routes.j
 import { messageRoutes } from "./modules/messages/message.routes.js";
 import { noteRoutes } from "./modules/notes/note.routes.js";
 import { kbRoutes } from "./modules/knowledge-base/kb.routes.js";
+import { aiRoutes } from "./modules/ai/ai.routes.js";
 
 export const app = express();
 
@@ -36,6 +37,7 @@ app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/organizations", orgRoutes);
 app.use("/api/v1/organizations/:orgId/tickets", orgTicketRoutes);
 app.use("/api/v1/tickets", ticketRoutes);
+app.use("/api/v1/tickets", aiRoutes);
 app.use("/api/v1/tickets/:ticketId/messages", messageRoutes);
 app.use("/api/v1/tickets/:ticketId/notes", noteRoutes);
 app.use("/api/v1/organizations/:orgId/kb", kbRoutes);

@@ -30,6 +30,7 @@
     "jsonwebtoken": "^9.0.3",
     "morgan": "latest",
     "multer": "^2.2.0",
+    "openai": "^6.44.0",
     "pdf-parse": "^2.4.5",
     "pg": "^8.21.0",
     "zod": "latest"
