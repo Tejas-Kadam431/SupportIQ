@@ -76,7 +76,7 @@ export function TicketsPage() {
   }
 
   return (
-    <main style={{ padding: "2rem", fontFamily: "system-ui" }}>
+    <main className="app-page">
       <header style={{ marginBottom: "2rem" }}>
         <h1>Tickets</h1>
         <p>View, search, and filter customer support tickets.</p>

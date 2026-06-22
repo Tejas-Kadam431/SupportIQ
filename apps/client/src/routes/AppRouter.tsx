@@ -9,55 +9,67 @@ import { TicketsPage } from "../features/tickets/TicketsPage";
 import { TicketDetailsPage } from "../features/tickets/TicketDetailsPage";
 import { CreateTicketPage } from "../features/tickets/CreateTicketPage";
 import { KnowledgeBasePage } from "../features/knowledge-base/KnowledgeBasePage";
+import { AppLayout } from "../components/AppLayout";
+import { ErrorPage } from "../components/ErrorPage";
+import { NotFoundPage } from "../components/NotFoundPage";
 
 export const router = createBrowserRouter([
   {
     path: "/",
-    element: <Navigate to="/dashboard" replace />
+    element: <Navigate to="/dashboard" replace />,
+    errorElement: <ErrorPage />
   },
   {
     path: "/login",
-    element: <LoginPage />
+    element: <LoginPage />,
+    errorElement: <ErrorPage />
   },
   {
     path: "/register",
-    element: <RegisterPage />
+    element: <RegisterPage />,
+    errorElement: <ErrorPage />
   },
   {
     element: <ProtectedRoute />,
+    errorElement: <ErrorPage />,
     children: [
       {
-        path: "/dashboard",
-        element: <DashboardPage />
-      },
-      {
-        path: "/organizations",
-        element: <OrganizationsPage />
-      },
-      {
-        path: "/organizations/:orgId/members",
-        element: <MembersPage />
-      },
-      {
-        path: "/tickets",
-        element: <TicketsPage />
-      },
-      {
-        path: "/tickets/new",
-        element: <CreateTicketPage />
-      },
-      {
-        path: "/tickets/:ticketId",
-        element: <TicketDetailsPage />
-      },
-      {
-        path: "/knowledge-base",
-        element: <KnowledgeBasePage />
+        element: <AppLayout />,
+        children: [
+          {
+            path: "dashboard",
+            element: <DashboardPage />
+          },
+          {
+            path: "organizations",
+            element: <OrganizationsPage />
+          },
+          {
+            path: "organizations/:orgId/members",
+            element: <MembersPage />
+          },
+          {
+            path: "tickets",
+            element: <TicketsPage />
+          },
+          {
+            path: "tickets/new",
+            element: <CreateTicketPage />
+          },
+          {
+            path: "tickets/:ticketId",
+            element: <TicketDetailsPage />
+          },
+          {
+            path: "knowledge-base",
+            element: <KnowledgeBasePage />
+          }
+        ]
       }
     ]
   },
   {
     path: "*",
-    element: <Navigate to="/dashboard" replace />
+    element: <NotFoundPage />
   }
 ]);

@@ -76,7 +76,7 @@ export function MembersPage() {
   const members = data?.data.members ?? [];
 
   return (
-    <main style={{ padding: "2rem", fontFamily: "system-ui" }}>
+    <main className="app-page">
       <header style={{ marginBottom: "2rem" }}>
         <h1>Organization Members</h1>
         <p>Manage users and roles inside this organization.</p>

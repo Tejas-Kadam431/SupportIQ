@@ -55,7 +55,7 @@ export function CreateTicketPage() {
   }
 
   return (
-    <main style={{ padding: "2rem", fontFamily: "system-ui" }}>
+    <main className="app-page">
       <header style={{ marginBottom: "2rem" }}>
         <Link to="/tickets">← Back to tickets</Link>
         <h1 style={{ marginTop: "1rem" }}>Create Ticket</h1>

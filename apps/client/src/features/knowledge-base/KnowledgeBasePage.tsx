@@ -34,16 +34,11 @@ export function KnowledgeBasePage() {
   const documents = documentData?.data.documents ?? [];
 
   return (
-    <main style={{ padding: "2rem", fontFamily: "system-ui" }}>
+    <main className="app-page">
       <header style={{ marginBottom: "2rem" }}>
         <h1>Knowledge Base</h1>
         <p>Upload support documents and search processed knowledge chunks.</p>
 
-        <nav style={{ display: "flex", gap: "1rem" }}>
-          <Link to="/dashboard">Dashboard</Link>
-          <Link to="/tickets">Tickets</Link>
-          <Link to="/organizations">Organizations</Link>
-        </nav>
       </header>
 
       <section style={{ marginBottom: "1.5rem" }}>

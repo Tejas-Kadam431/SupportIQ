@@ -44,17 +44,11 @@ export function DashboardPage() {
   const dashboard = dashboardData?.data;
 
   return (
-    <main style={{ padding: "2rem", fontFamily: "system-ui" }}>
+    <main className="app-page">
       <header style={{ marginBottom: "2rem" }}>
         <h1>SupportIQ Dashboard</h1>
         <p>Welcome, {user?.name ?? "there"}.</p>
 
-        <nav style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
-          <Link to="/organizations">Organizations</Link>
-          <Link to="/tickets">Tickets</Link>
-          <Link to="/tickets/new">Create Ticket</Link>
-          <Link to="/knowledge-base">Knowledge Base</Link>
-        </nav>
       </header>
 
       <section style={{ marginBottom: "1.5rem" }}>

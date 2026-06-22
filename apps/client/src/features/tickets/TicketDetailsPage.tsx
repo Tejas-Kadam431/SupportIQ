@@ -103,7 +103,7 @@ export function TicketDetailsPage() {
   }
 
   return (
-    <main style={{ padding: "2rem", fontFamily: "system-ui" }}>
+    <main className="app-page">
       <header style={{ marginBottom: "2rem" }}>
         <Link to="/tickets">← Back to tickets</Link>
 
