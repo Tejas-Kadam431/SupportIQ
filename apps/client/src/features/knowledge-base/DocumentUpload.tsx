@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useUploadKnowledgeDocumentMutation } from "./kbApi";
 
 type Props = {
@@ -6,6 +6,7 @@ type Props = {
 };
 
 export function DocumentUpload({ orgId }: Props) {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadError, setUploadError] = useState("");
 
@@ -29,12 +30,8 @@ export function DocumentUpload({ orgId }: Props) {
 
       setSelectedFile(null);
 
-      const fileInput = event.currentTarget.elements.namedItem(
-        "file"
-      ) as HTMLInputElement | null;
-
-      if (fileInput) {
-        fileInput.value = "";
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
       }
     } catch (error) {
       console.error("Failed to upload document:", error);
@@ -56,6 +53,7 @@ export function DocumentUpload({ orgId }: Props) {
 
       <form onSubmit={handleSubmit}>
         <input
+          ref={fileInputRef}
           name="file"
           type="file"
           accept=".pdf,.txt,.md,.markdown,application/pdf,text/plain,text/markdown"

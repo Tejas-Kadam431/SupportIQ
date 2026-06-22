@@ -27,6 +27,18 @@ export const router = createBrowserRouter([
     element: <ProtectedRoute />,
     children: [
       {
+        path: "/dashboard",
+        element: <DashboardPage />
+      },
+      {
+        path: "/organizations",
+        element: <OrganizationsPage />
+      },
+      {
+        path: "/organizations/:orgId/members",
+        element: <MembersPage />
+      },
+      {
         path: "/tickets",
         element: <TicketsPage />
       },
@@ -43,5 +55,9 @@ export const router = createBrowserRouter([
         element: <KnowledgeBasePage />
       }
     ]
+  },
+  {
+    path: "*",
+    element: <Navigate to="/dashboard" replace />
   }
 ]);
