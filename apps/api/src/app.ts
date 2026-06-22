@@ -12,6 +12,7 @@ import { noteRoutes } from "./modules/notes/note.routes.js";
 import { kbRoutes } from "./modules/knowledge-base/kb.routes.js";
 import { aiRoutes } from "./modules/ai/ai.routes.js";
 import { activityRoutes } from "./modules/activity/activity.routes.js";
+import { dashboardRoutes } from "./modules/dashboard/dashboard.routes.js";
 
 export const app = express();
 
@@ -36,6 +37,7 @@ app.get("/health", (_req, res) => {
 });
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/organizations", orgRoutes);
+app.use("/api/v1/organizations/:orgId/dashboard", dashboardRoutes);
 app.use("/api/v1/organizations/:orgId/tickets", orgTicketRoutes);
 app.use("/api/v1/tickets", ticketRoutes);
 app.use("/api/v1/tickets", aiRoutes);
