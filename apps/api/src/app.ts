@@ -11,6 +11,7 @@ import { messageRoutes } from "./modules/messages/message.routes.js";
 import { noteRoutes } from "./modules/notes/note.routes.js";
 import { kbRoutes } from "./modules/knowledge-base/kb.routes.js";
 import { aiRoutes } from "./modules/ai/ai.routes.js";
+import { activityRoutes } from "./modules/activity/activity.routes.js";
 
 export const app = express();
 
@@ -41,6 +42,7 @@ app.use("/api/v1/tickets", aiRoutes);
 app.use("/api/v1/tickets/:ticketId/messages", messageRoutes);
 app.use("/api/v1/tickets/:ticketId/notes", noteRoutes);
 app.use("/api/v1/organizations/:orgId/kb", kbRoutes);
+app.use("/api/v1/tickets/:ticketId/activity", activityRoutes);
 app.use((_req, res) => {
   res.status(404).json({
     message: "Route not found"

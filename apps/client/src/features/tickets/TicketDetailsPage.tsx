@@ -11,6 +11,7 @@ import {
 import { MessageThread } from "./MessageThread";
 import { InternalNotes } from "./InternalNotes";
 import { AiDraftPanel } from "./AiDraftPanel";
+import { ActivityTimeline } from "./ActivityTimeline";
 const statuses: TicketStatus[] = [
   "OPEN",
   "IN_PROGRESS",
@@ -226,6 +227,7 @@ export function TicketDetailsPage() {
         <MessageThread ticketId={ticket.id} />
         <InternalNotes ticketId={ticket.id} />
       </section>
+      <ActivityTimeline ticketId={ticket.id} />
     </main>
   );
 }
