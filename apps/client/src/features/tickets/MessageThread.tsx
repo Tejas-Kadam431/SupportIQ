@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useAppSelector } from "../../app/hooks";
 import {
   useCreateMessageMutation,
   useListMessagesQuery
 } from "./messagesApi";
+import { useTicketRealtime } from "../realtime/useTicketRealtime";
 
 type Props = {
   ticketId: string;
@@ -16,8 +17,18 @@ export function MessageThread({ ticketId }: Props) {
   const {
     data,
     isLoading,
-    isError
+    isError,
+    refetch
   } = useListMessagesQuery(ticketId);
+
+  const handleRealtimeMessage = useCallback(() => {
+    void refetch();
+  }, [refetch]);
+
+  useTicketRealtime({
+    ticketId,
+    onMessageCreated: handleRealtimeMessage
+  });
 
   const [createMessage, { isLoading: isSending }] = useCreateMessageMutation();
 
@@ -54,9 +65,7 @@ export function MessageThread({ ticketId }: Props) {
 
       {isLoading && <p>Loading messages...</p>}
 
-      {isError && (
-        <p style={{ color: "red" }}>Failed to load messages.</p>
-      )}
+      {isError && <p style={{ color: "red" }}>Failed to load messages.</p>}
 
       {!isLoading && messages.length === 0 && (
         <p>No messages yet. Start the conversation.</p>
