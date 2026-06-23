@@ -1,7 +1,7 @@
 import fs from "fs/promises";
 import { prisma } from "../../config/prisma.js";
 import { AppError } from "../../common/errors/AppError.js";
-import { processKnowledgeDocument } from "./kb.processing.js";
+import { enqueueKnowledgeDocumentProcessing } from "./kb.queue.js";
 import type { SearchKnowledgeQuery } from "./kb.schema.js";
 
 type UploadedFileInput = {
@@ -71,7 +71,11 @@ export async function createKnowledgeDocument(
     }
   });
 
-  await processKnowledgeDocument(orgId, document.id);
+  await enqueueKnowledgeDocumentProcessing({
+    orgId,
+    documentId: document.id,
+    requestedById: userId
+  });
 
   return getKnowledgeDocument(orgId, document.id);
 }
@@ -220,10 +224,28 @@ export async function searchKnowledgeBase(orgId: string, query: SearchKnowledgeQ
   };
 }
 
-export async function reprocessKnowledgeDocument(orgId: string, documentId: string) {
+export async function reprocessKnowledgeDocument(
+  orgId: string,
+  documentId: string,
+  requestedById = "system"
+) {
   await getKnowledgeDocument(orgId, documentId);
 
-  await processKnowledgeDocument(orgId, documentId);
+  await prisma.knowledgeDocument.update({
+    where: {
+      id: documentId
+    },
+    data: {
+      status: "PROCESSING",
+      errorMessage: null
+    }
+  });
+
+  await enqueueKnowledgeDocumentProcessing({
+    orgId,
+    documentId,
+    requestedById
+  });
 
   return getKnowledgeDocument(orgId, documentId);
 }

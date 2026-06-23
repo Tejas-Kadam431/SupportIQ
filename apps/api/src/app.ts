@@ -1,6 +1,5 @@
 import express from "express";
 import cors from "cors";
-import helmet from "helmet";
 import morgan from "morgan";
 import cookieParser from "cookie-parser";
 import { authRoutes } from "./modules/auth/auth.routes.js";
@@ -13,10 +12,11 @@ import { kbRoutes } from "./modules/knowledge-base/kb.routes.js";
 import { aiRoutes } from "./modules/ai/ai.routes.js";
 import { activityRoutes } from "./modules/activity/activity.routes.js";
 import { dashboardRoutes } from "./modules/dashboard/dashboard.routes.js";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 
 export const app = express();
 
-app.use(helmet());
 
 app.use(
   cors({
@@ -24,7 +24,22 @@ app.use(
     credentials: true
   })
 );
+app.use(
+  helmet({
+    crossOriginResourcePolicy: {
+      policy: "cross-origin"
+    }
+  })
+);
 
+app.use(
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 300,
+    standardHeaders: true,
+    legacyHeaders: false
+  })
+);
 app.use(express.json());
 app.use(cookieParser());
 app.use(morgan("dev"));

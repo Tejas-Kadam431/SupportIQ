@@ -1,4 +1,4 @@
-import type { Response } from "express";
+import type { Request, Response } from "express";
 import { AppError } from "../../common/errors/AppError.js";
 import type { AuthenticatedRequest } from "../../common/middleware/auth.middleware.js";
 import {
@@ -11,6 +11,7 @@ import {
   searchKnowledgeBase
 } from "./kb.service.js";
 import type { SearchKnowledgeQuery } from "./kb.schema.js";
+
 
 function getUserId(req: AuthenticatedRequest) {
   if (!req.user) {
@@ -105,14 +106,21 @@ export async function listChunksHandler(req: AuthenticatedRequest, res: Response
   });
 }
 
-export async function reprocessDocumentHandler(req: AuthenticatedRequest, res: Response) {
+export async function reprocessDocumentHandler(
+  req: AuthenticatedRequest,
+  res: Response
+) {
+  const userId = getUserId(req);
   const orgId = getParam(req, "orgId");
   const documentId = getParam(req, "documentId");
 
-  const document = await reprocessKnowledgeDocument(orgId, documentId);
+  const document = await reprocessKnowledgeDocument(
+    orgId,
+    documentId,
+    userId
+  );
 
   return res.status(200).json({
-    message: "Document reprocessed successfully",
     data: {
       document
     }
