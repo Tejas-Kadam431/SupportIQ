@@ -1,6 +1,7 @@
 import { prisma } from "../../config/prisma.js";
 import { getTicketOrThrow } from "../tickets/ticket.service.js";
 import type { CreateMessageInput } from "./message.schema.js";
+import { emitTicketMessageCreated } from "../realtime/realtime.service.js";
 
 type Role = "OWNER" | "ADMIN" | "AGENT" | "CUSTOMER";
 
@@ -87,6 +88,11 @@ export async function createTicketMessage(
     });
 
     return createdMessage;
+  });
+
+  emitTicketMessageCreated({
+    ticketId,
+    message
   });
 
   return message;
