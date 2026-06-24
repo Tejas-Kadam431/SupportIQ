@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useSearchKnowledgeBaseQuery } from "./kbApi";
+import "./kb.css";
 
 type Props = {
   orgId: string;
@@ -37,74 +38,83 @@ export function KnowledgeSearch({ orgId }: Props) {
   }
 
   return (
-    <section
-      style={{
-        border: "1px solid #ddd",
-        borderRadius: 8,
-        padding: "1rem"
-      }}
-    >
-      <h2>Search knowledge base</h2>
+    <section className="siq-card kb-search-card">
+      <div className="kb-card-header">
+        <div>
+          <div className="kb-search-icon">⌕</div>
+          <h2>Search knowledge</h2>
+          <p>
+            Test whether uploaded documents are searchable before relying on them
+            in AI replies.
+          </p>
+        </div>
+      </div>
 
-      <form
-        onSubmit={handleSubmit}
-        style={{
-          display: "flex",
-          gap: "0.75rem",
-          marginBottom: "1rem"
-        }}
-      >
+      <form onSubmit={handleSubmit} className="kb-search-form">
         <input
           value={searchInput}
           onChange={(event) => setSearchInput(event.target.value)}
-          placeholder="Search uploaded documents..."
-          style={{ padding: "0.7rem", flex: 1 }}
+          placeholder="Example: refund policy, billing issue, onboarding steps..."
         />
 
-        <button type="submit" disabled={!searchInput.trim() || isFetching}>
+        <button
+          type="submit"
+          className="siq-button siq-button-primary"
+          disabled={!searchInput.trim() || isFetching}
+        >
           {isFetching ? "Searching..." : "Search"}
         </button>
       </form>
 
-      {isError && <p style={{ color: "red" }}>Search failed.</p>}
+      {isError && <div className="kb-alert kb-alert-error">Search failed.</div>}
 
-      {submittedQuery && !isFetching && !isError && results.length === 0 && (
-        <p>No results found for “{submittedQuery}”.</p>
+      {!submittedQuery && (
+        <div className="kb-search-empty">
+          <strong>No search yet</strong>
+          <p>Enter a question or keyword to test knowledge retrieval.</p>
+        </div>
       )}
 
-      <div style={{ display: "grid", gap: "0.75rem" }}>
-        {results.map((result) => (
-          <article
-            key={result.id}
-            style={{
-              border: "1px solid #eee",
-              borderRadius: 8,
-              padding: "0.75rem"
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                gap: "1rem",
-                marginBottom: "0.5rem"
-              }}
-            >
-              <strong>{result.document.originalName}</strong>
-              <small>Score: {result.score}</small>
-            </div>
+      {submittedQuery && !isFetching && !isError && results.length === 0 && (
+        <div className="kb-search-empty">
+          <strong>No results found</strong>
+          <p>No chunks matched “{submittedQuery}”.</p>
+        </div>
+      )}
 
-            <p style={{ whiteSpace: "pre-wrap", marginBottom: "0.5rem" }}>
-              {result.content}
-            </p>
+      {results.length > 0 && (
+        <div className="kb-search-results">
+          <div className="kb-result-summary">
+            <strong>{results.length} results</strong>
+            <span>for “{submittedQuery}”</span>
+          </div>
 
-            <small>
-              Chunk #{result.chunkIndex + 1} · Estimated tokens:{" "}
-              {result.tokenCount}
-            </small>
-          </article>
-        ))}
-      </div>
+          {results.map((result) => (
+            <article key={result.id} className="kb-result-card">
+              <div className="kb-result-header">
+                <div>
+                  <strong>{result.document.originalName}</strong>
+                  <small>
+                    Chunk #{result.chunkIndex + 1} · Estimated tokens:{" "}
+                    {result.tokenCount}
+                  </small>
+                </div>
+
+                <span className="siq-badge siq-badge-blue">
+                  Score {formatScore(result.score)}
+                </span>
+              </div>
+
+              <p>{result.content}</p>
+            </article>
+          ))}
+        </div>
+      )}
     </section>
   );
+}
+
+function formatScore(score: number) {
+  if (Number.isInteger(score)) return String(score);
+  return score.toFixed(2);
 }

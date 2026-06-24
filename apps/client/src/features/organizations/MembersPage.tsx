@@ -1,12 +1,16 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import type { FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
+  type OrganizationMember,
   type Role,
   useAddMemberMutation,
   useListMembersQuery,
+  useListOrganizationsQuery,
   useRemoveMemberMutation,
   useUpdateMemberRoleMutation
 } from "./orgApi";
+import "./organizations.css";
 
 const editableRoles: Exclude<Role, "OWNER">[] = ["ADMIN", "AGENT", "CUSTOMER"];
 
@@ -15,35 +19,82 @@ export function MembersPage() {
 
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<Exclude<Role, "OWNER">>("AGENT");
+  const [formError, setFormError] = useState("");
+  const [message, setMessage] = useState("");
 
-  const { data, isLoading, isError } = useListMembersQuery(orgId ?? "", {
+  const {
+    data,
+    isLoading,
+    isError
+  } = useListMembersQuery(orgId ?? "", {
     skip: !orgId
   });
 
-  const [addMember, { isLoading: isAdding }] = useAddMemberMutation();
-  const [updateMemberRole] = useUpdateMemberRoleMutation();
-  const [removeMember] = useRemoveMemberMutation();
+  const { data: orgData } = useListOrganizationsQuery();
 
-  async function handleAddMember(event: React.FormEvent<HTMLFormElement>) {
+  const selectedOrg = orgData?.data.organizations.find(
+    (item) => item.organization.id === orgId
+  );
+
+  const [addMember, { isLoading: isAdding }] = useAddMemberMutation();
+
+  const [updateMemberRole, { isLoading: isUpdatingRole }] =
+    useUpdateMemberRoleMutation();
+
+  const [removeMember, { isLoading: isRemoving }] = useRemoveMemberMutation();
+
+  const members = data?.data.members ?? [];
+
+  const counts = useMemo(() => {
+    return {
+      total: members.length,
+      owners: members.filter((member) => member.role === "OWNER").length,
+      admins: members.filter((member) => member.role === "ADMIN").length,
+      agents: members.filter((member) => member.role === "AGENT").length,
+      customers: members.filter((member) => member.role === "CUSTOMER").length
+    };
+  }, [members]);
+
+  async function handleAddMember(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!orgId || !email.trim()) return;
+    const trimmedEmail = email.trim();
+
+    if (!orgId) {
+      setFormError("Organization id is missing.");
+      return;
+    }
+
+    if (!trimmedEmail) {
+      setFormError("Please enter a user email.");
+      return;
+    }
+
+    setFormError("");
+    setMessage("");
 
     try {
       await addMember({
         orgId,
-        email: email.trim(),
+        email: trimmedEmail,
         role
       }).unwrap();
 
       setEmail("");
       setRole("AGENT");
+      setMessage("Member added successfully.");
     } catch (error) {
       console.error("Failed to add member:", error);
+      setFormError(
+        "Failed to add member. The user must already have a SupportIQ account."
+      );
     }
   }
 
-  async function handleRoleChange(memberId: string, nextRole: Exclude<Role, "OWNER">) {
+  async function handleRoleChange(
+    memberId: string,
+    nextRole: Exclude<Role, "OWNER">
+  ) {
     if (!orgId) return;
 
     try {
@@ -73,106 +124,239 @@ export function MembersPage() {
     }
   }
 
-  const members = data?.data.members ?? [];
-
   return (
-    <main className="app-page">
-      <header style={{ marginBottom: "2rem" }}>
-        <h1>Organization Members</h1>
-        <p>Manage users and roles inside this organization.</p>
-        <Link to="/organizations">Back to organizations</Link>
+    <main className="app-page member-page">
+      <header className="siq-page-header">
+        <div className="siq-page-title">
+          <Link to="/organizations" className="ticket-back-link">
+            ← Back to organizations
+          </Link>
+
+          <p className="org-eyebrow" style={{ marginTop: "1rem" }}>
+            Access Control
+          </p>
+
+          <h1>Organization Members</h1>
+
+          <p>
+            Manage users and roles
+            {selectedOrg ? ` for ${selectedOrg.organization.name}` : ""}.
+          </p>
+        </div>
+
+        <div className="siq-toolbar">
+          <Link to="/tickets" className="siq-button">
+            Tickets
+          </Link>
+
+          <Link to="/knowledge-base" className="siq-button siq-button-primary">
+            Knowledge Base
+          </Link>
+        </div>
       </header>
 
-      <section style={{ marginBottom: "2rem" }}>
-        <h2>Add member</h2>
-        <p>The user must already have a SupportIQ account.</p>
+      <section className="member-main-grid">
+        <section className="siq-card member-add-card">
+          <div className="member-add-icon">+</div>
 
-        <form onSubmit={handleAddMember}>
-          <input
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            placeholder="user@example.com"
-            type="email"
-            style={{ padding: "0.6rem", width: 300, marginRight: "0.5rem" }}
-          />
+          <h2>Add member</h2>
+          <p>
+            Add an existing SupportIQ user to this organization and assign their
+            access level.
+          </p>
 
-          <select
-            value={role}
-            onChange={(event) => setRole(event.target.value as Exclude<Role, "OWNER">)}
-            style={{ padding: "0.6rem", marginRight: "0.5rem" }}
-          >
-            {editableRoles.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </select>
+          <form onSubmit={handleAddMember} className="member-form">
+            {formError && <p className="member-error-message">{formError}</p>}
+            {message && <p className="member-success-message">{message}</p>}
 
-          <button type="submit" disabled={isAdding}>
-            {isAdding ? "Adding..." : "Add member"}
-          </button>
-        </form>
-      </section>
+            <div className="member-field">
+              <label htmlFor="member-email">User email</label>
+              <input
+                id="member-email"
+                value={email}
+                onChange={(event) => {
+                  setEmail(event.target.value);
+                  setFormError("");
+                  setMessage("");
+                }}
+                placeholder="user@example.com"
+                type="email"
+              />
+              <small>The user must already have an account.</small>
+            </div>
 
-      <section>
-        <h2>Members</h2>
+            <div className="member-field">
+              <label htmlFor="member-role">Role</label>
+              <select
+                id="member-role"
+                value={role}
+                onChange={(event) =>
+                  setRole(event.target.value as Exclude<Role, "OWNER">)
+                }
+              >
+                {editableRoles.map((item) => (
+                  <option key={item} value={item}>
+                    {formatLabel(item)}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-        {isLoading && <p>Loading members...</p>}
-
-        {isError && <p style={{ color: "red" }}>Failed to load members.</p>}
-
-        {!isLoading && members.length === 0 && <p>No members found.</p>}
-
-        <div style={{ display: "grid", gap: "1rem", maxWidth: 900 }}>
-          {members.map((member) => (
-            <article
-              key={member.id}
-              style={{
-                border: "1px solid #ddd",
-                borderRadius: 8,
-                padding: "1rem"
-              }}
+            <button
+              type="submit"
+              className="siq-button siq-button-primary"
+              disabled={isAdding || !email.trim()}
             >
-              <h3>{member.user.name}</h3>
-              <p>{member.user.email}</p>
+              {isAdding ? "Adding..." : "Add member"}
+            </button>
+          </form>
+        </section>
 
-              <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
-                <strong>Role:</strong>
+        <section className="siq-card member-list-card">
+          <div className="member-list-top">
+            <div>
+              <h2>Members</h2>
+              <p>
+                {counts.total} users · {counts.owners} owner · {counts.admins} admin ·{" "}
+                {counts.agents} agent · {counts.customers} customer
+              </p>
+            </div>
 
-                {member.role === "OWNER" ? (
-                  <span>OWNER</span>
-                ) : (
-                  <select
-                    value={member.role}
-                    onChange={(event) =>
-                      handleRoleChange(
-                        member.id,
-                        event.target.value as Exclude<Role, "OWNER">
-                      )
-                    }
-                    style={{ padding: "0.5rem" }}
-                  >
-                    {editableRoles.map((item) => (
-                      <option key={item} value={item}>
-                        {item}
-                      </option>
-                    ))}
-                  </select>
-                )}
+            {isLoading && <span className="siq-badge siq-badge-blue">Loading</span>}
+          </div>
 
-                {member.role !== "OWNER" && (
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveMember(member.id)}
-                  >
-                    Remove
-                  </button>
-                )}
+          {isError && (
+            <div className="member-alert member-alert-error">
+              Failed to load members.
+            </div>
+          )}
+
+          {!isLoading && !isError && members.length === 0 && (
+            <div className="member-empty-state">
+              No members found for this organization.
+            </div>
+          )}
+
+          {members.length > 0 && (
+            <div className="member-table">
+              <div className="member-row member-head">
+                <span>User</span>
+                <span>Role</span>
+                <span>Joined</span>
+                <span>Actions</span>
               </div>
-            </article>
-          ))}
-        </div>
+
+              {members.map((member) => (
+                <MemberRow
+                  key={member.id}
+                  member={member}
+                  isUpdatingRole={isUpdatingRole}
+                  isRemoving={isRemoving}
+                  onRoleChange={handleRoleChange}
+                  onRemove={handleRemoveMember}
+                />
+              ))}
+            </div>
+          )}
+        </section>
       </section>
     </main>
   );
+}
+
+function MemberRow({
+  member,
+  isUpdatingRole,
+  isRemoving,
+  onRoleChange,
+  onRemove
+}: {
+  member: OrganizationMember;
+  isUpdatingRole: boolean;
+  isRemoving: boolean;
+  onRoleChange: (
+    memberId: string,
+    nextRole: Exclude<Role, "OWNER">
+  ) => Promise<void>;
+  onRemove: (memberId: string) => Promise<void>;
+}) {
+  return (
+    <article className="member-row member-item">
+      <div className="member-user">
+        <div className="member-avatar">
+          {(member.user.name[0] ?? "U").toUpperCase()}
+        </div>
+
+        <div>
+          <strong>{member.user.name}</strong>
+          <span>{member.user.email}</span>
+        </div>
+      </div>
+
+      <div>
+        {member.role === "OWNER" ? (
+          <RoleBadge role={member.role} />
+        ) : (
+          <select
+            value={member.role}
+            onChange={(event) =>
+              onRoleChange(
+                member.id,
+                event.target.value as Exclude<Role, "OWNER">
+              )
+            }
+            disabled={isUpdatingRole}
+            className="member-role-select"
+          >
+            {editableRoles.map((item) => (
+              <option key={item} value={item}>
+                {formatLabel(item)}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+
+      <span className="member-muted">{formatDate(member.createdAt)}</span>
+
+      <div className="member-actions">
+        {member.role === "OWNER" ? (
+          <span className="siq-badge">Protected</span>
+        ) : (
+          <button
+            type="button"
+            className="siq-button member-danger-button"
+            onClick={() => onRemove(member.id)}
+            disabled={isRemoving}
+          >
+            Remove
+          </button>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function RoleBadge({ role }: { role: Role }) {
+  return (
+    <span className={`siq-badge member-role-${role.toLowerCase()}`}>
+      {formatLabel(role)}
+    </span>
+  );
+}
+
+function formatLabel(value: string) {
+  return value
+    .toLowerCase()
+    .split("_")
+    .map((part) => part[0].toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function formatDate(value: string) {
+  return new Date(value).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric"
+  });
 }

@@ -1,8 +1,8 @@
+import type { ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useAppSelector } from "../../app/hooks";
-import { TicketPriorityBadge } from "./TicketPriorityBadge";
-import { TicketStatusBadge } from "./TicketStatusBadge";
 import {
+  type TicketPriority,
   type TicketStatus,
   useAssignTicketMutation,
   useGetTicketQuery,
@@ -12,6 +12,8 @@ import { MessageThread } from "./MessageThread";
 import { InternalNotes } from "./InternalNotes";
 import { AiDraftPanel } from "./AiDraftPanel";
 import { ActivityTimeline } from "./ActivityTimeline";
+import "./tickets.css";
+
 const statuses: TicketStatus[] = [
   "OPEN",
   "IN_PROGRESS",
@@ -81,173 +83,242 @@ export function TicketDetailsPage() {
 
   if (isLoading) {
     return (
-      <main style={{ padding: "2rem", fontFamily: "system-ui" }}>
-        <p>Loading ticket...</p>
+      <main className="app-page ticket-detail-page">
+        <section className="siq-card siq-card-padding ticket-loading">
+          Loading ticket...
+        </section>
       </main>
     );
   }
 
   if (isError || !ticket) {
     return (
-      <main style={{ padding: "2rem", fontFamily: "system-ui" }}>
-        <h1>Ticket not found</h1>
-        <p>Could not load this ticket.</p>
-        <button type="button" onClick={() => refetch()}>
-          Retry
-        </button>
-        <br />
-        <br />
-        <Link to="/tickets">Back to tickets</Link>
+      <main className="app-page ticket-detail-page">
+        <section className="siq-card siq-card-padding ticket-alert ticket-alert-error">
+          <h1>Ticket not found</h1>
+          <p>Could not load this ticket.</p>
+          <button type="button" className="siq-button" onClick={() => refetch()}>
+            Retry
+          </button>
+          <br />
+          <br />
+          <Link to="/tickets" className="ticket-back-link">
+            Back to tickets
+          </Link>
+        </section>
       </main>
     );
   }
 
   return (
-    <main className="app-page">
-      <header style={{ marginBottom: "2rem" }}>
-        <Link to="/tickets">← Back to tickets</Link>
+    <main className="app-page ticket-detail-page">
+      <section className="siq-card ticket-detail-hero">
+        <div className="ticket-detail-hero-top">
+          <div>
+            <Link to="/tickets" className="ticket-back-link">
+              ← Back to tickets
+            </Link>
 
-        <h1 style={{ marginTop: "1rem" }}>{ticket.title}</h1>
+            <h1>{ticket.title}</h1>
 
-        <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
-          <TicketStatusBadge status={ticket.status} />
-          <TicketPriorityBadge priority={ticket.priority} />
+            <div className="ticket-badge-row">
+              <StatusBadge status={ticket.status} />
+              <PriorityBadge priority={ticket.priority} />
+              <span className="siq-badge">#{ticket.id.slice(0, 8)}</span>
+            </div>
+          </div>
+
+          <div className="ticket-toolbar">
+            <Link to="/tickets/new" className="siq-button">
+              New Ticket
+            </Link>
+          </div>
         </div>
 
-        <p>{ticket.description}</p>
-      </header>
+        <p className="ticket-detail-description">{ticket.description}</p>
+      </section>
 
-      <section
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-          gap: "1rem",
-          marginBottom: "2rem"
-        }}
-      >
+      <section className="ticket-info-grid">
         <InfoCard title="Organization" value={ticket.organization.name} />
-        <InfoCard title="Customer" value={`${ticket.customer.name} (${ticket.customer.email})`} />
+        <InfoCard
+          title="Customer"
+          value={
+            <>
+              {ticket.customer.name}
+              <br />
+              <span className="siq-muted">{ticket.customer.email}</span>
+            </>
+          }
+        />
         <InfoCard
           title="Assignee"
           value={
-            ticket.assignee
-              ? `${ticket.assignee.name} (${ticket.assignee.email})`
-              : "Unassigned"
+            ticket.assignee ? (
+              <>
+                {ticket.assignee.name}
+                <br />
+                <span className="siq-muted">{ticket.assignee.email}</span>
+              </>
+            ) : (
+              "Unassigned"
+            )
           }
         />
-        <InfoCard title="Created" value={new Date(ticket.createdAt).toLocaleString()} />
+        <InfoCard title="Created" value={formatFullDate(ticket.createdAt)} />
         <InfoCard
           title="First Response"
           value={
             ticket.firstResponseAt
-              ? new Date(ticket.firstResponseAt).toLocaleString()
+              ? formatFullDate(ticket.firstResponseAt)
               : "Not responded yet"
           }
         />
         <InfoCard
           title="Resolved"
-          value={
-            ticket.resolvedAt
-              ? new Date(ticket.resolvedAt).toLocaleString()
-              : "Not resolved"
-          }
+          value={ticket.resolvedAt ? formatFullDate(ticket.resolvedAt) : "Not resolved"}
         />
       </section>
 
-      <section
-        style={{
-          border: "1px solid #ddd",
-          borderRadius: 8,
-          padding: "1rem",
-          marginBottom: "1.5rem"
-        }}
-      >
-        <h2>Ticket Actions</h2>
+      <section className="siq-card ticket-actions-card">
+        <div className="siq-card-header">
+          <div>
+            <h2 className="siq-card-title">Ticket Actions</h2>
+            <p className="dashboard-card-subtitle">
+              Update status or assignment for this support request.
+            </p>
+          </div>
+        </div>
 
-        <div
-          style={{
-            display: "flex",
-            gap: "1rem",
-            flexWrap: "wrap",
-            alignItems: "center"
-          }}
-        >
-          <label>
-            Status
+        <div className="ticket-actions-grid">
+          <div className="ticket-field" style={{ minWidth: 220 }}>
+            <label htmlFor="ticket-status-select">Status</label>
             <select
+              id="ticket-status-select"
               value={ticket.status}
               disabled={isUpdatingStatus}
               onChange={(event) =>
                 handleStatusChange(event.target.value as TicketStatus)
               }
-              style={{
-                display: "block",
-                padding: "0.6rem",
-                marginTop: "0.5rem"
-              }}
+              className="ticket-action-select"
             >
               {statuses.map((status) => (
                 <option key={status} value={status}>
-                  {status}
+                  {formatLabel(status)}
                 </option>
               ))}
             </select>
-          </label>
+          </div>
 
           <div>
-            <p style={{ marginBottom: "0.5rem" }}>Assignment</p>
-
-            <button
-              type="button"
-              onClick={handleAssignToMe}
-              disabled={isAssigning || ticket.assigneeId === user?.id}
-              style={{ marginRight: "0.5rem" }}
+            <label
+              style={{
+                display: "block",
+                color: "#475569",
+                fontSize: "0.8rem",
+                fontWeight: 800,
+                marginBottom: "0.35rem"
+              }}
             >
-              {isAssigning ? "Assigning..." : "Assign to me"}
-            </button>
+              Assignment
+            </label>
 
-            <button
-              type="button"
-              onClick={handleUnassign}
-              disabled={isAssigning || !ticket.assigneeId}
-            >
-              Unassign
-            </button>
+            <div className="ticket-assignment-actions">
+              <button
+                type="button"
+                className="siq-button siq-button-primary"
+                onClick={handleAssignToMe}
+                disabled={isAssigning || ticket.assigneeId === user?.id}
+              >
+                {isAssigning ? "Assigning..." : "Assign to me"}
+              </button>
+
+              <button
+                type="button"
+                className="siq-button"
+                onClick={handleUnassign}
+                disabled={isAssigning || !ticket.assigneeId}
+              >
+                Unassign
+              </button>
+            </div>
           </div>
         </div>
       </section>
+
       <AiDraftPanel ticketId={ticket.id} />
-      <section
-        style={{
-          display: "grid",
-          gridTemplateColumns: "2fr 1fr",
-          gap: "1rem"
-        }}
-      >
+
+      <section className="ticket-workspace-grid">
         <MessageThread ticketId={ticket.id} />
-        <InternalNotes ticketId={ticket.id} />
+
+        <aside className="ticket-side-stack">
+          <InternalNotes ticketId={ticket.id} />
+          <ActivityTimeline ticketId={ticket.id} />
+        </aside>
       </section>
-      <ActivityTimeline ticketId={ticket.id} />
     </main>
   );
 }
 
 type InfoCardProps = {
   title: string;
-  value: string;
+  value: ReactNode;
 };
 
 function InfoCard({ title, value }: InfoCardProps) {
   return (
-    <article
-      style={{
-        border: "1px solid #ddd",
-        borderRadius: 8,
-        padding: "1rem"
-      }}
-    >
+    <article className="siq-card ticket-info-card">
       <strong>{title}</strong>
       <p>{value}</p>
     </article>
   );
+}
+
+function StatusBadge({ status }: { status: TicketStatus }) {
+  return (
+    <span className={`siq-badge siq-badge-${statusTone(status)}`}>
+      {formatLabel(status)}
+    </span>
+  );
+}
+
+function PriorityBadge({ priority }: { priority: TicketPriority }) {
+  return (
+    <span className={`siq-badge siq-badge-${priorityTone(priority)}`}>
+      {formatLabel(priority)}
+    </span>
+  );
+}
+
+function formatLabel(value: string) {
+  return value
+    .toLowerCase()
+    .split("_")
+    .map((part) => part[0].toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function formatFullDate(value: string) {
+  return new Date(value).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+function statusTone(status: TicketStatus) {
+  if (status === "OPEN") return "blue";
+  if (status === "IN_PROGRESS") return "purple";
+  if (status === "WAITING") return "orange";
+  if (status === "RESOLVED") return "green";
+  return "slate";
+}
+
+function priorityTone(priority: TicketPriority) {
+  if (priority === "LOW") return "green";
+  if (priority === "MEDIUM") return "orange";
+  if (priority === "HIGH") return "red";
+  if (priority === "URGENT") return "red";
+  return "slate";
 }

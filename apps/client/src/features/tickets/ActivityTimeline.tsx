@@ -1,5 +1,6 @@
 import { useListTicketActivityQuery } from "./activityApi";
 import type { ActivityType } from "./activityApi";
+import "./tickets.css";
 
 type Props = {
   ticketId: string;
@@ -15,6 +16,16 @@ const activityLabels: Record<ActivityType, string> = {
   DOCUMENT_UPLOADED: "Document uploaded"
 };
 
+const activityIcons: Record<ActivityType, string> = {
+  TICKET_CREATED: "+",
+  TICKET_ASSIGNED: "↗",
+  STATUS_CHANGED: "↻",
+  MESSAGE_SENT: "✉",
+  INTERNAL_NOTE_ADDED: "✎",
+  AI_REPLY_GENERATED: "✦",
+  DOCUMENT_UPLOADED: "⬆"
+};
+
 export function ActivityTimeline({ ticketId }: Props) {
   const {
     data,
@@ -25,61 +36,49 @@ export function ActivityTimeline({ ticketId }: Props) {
   const activities = data?.data.activities ?? [];
 
   return (
-    <section
-      style={{
-        border: "1px solid #ddd",
-        borderRadius: 8,
-        padding: "1rem",
-        marginTop: "1.5rem"
-      }}
-    >
-      <h2>Activity Timeline</h2>
-      <p style={{ color: "#555" }}>
-        Internal audit trail for ticket changes and support actions.
-      </p>
+    <section className="siq-card activity-card">
+      <div className="siq-card-header">
+        <div>
+          <h2 className="siq-card-title">Activity Timeline</h2>
+          <p className="dashboard-card-subtitle">
+            Audit trail for ticket changes and support actions.
+          </p>
+        </div>
 
-      {isLoading && <p>Loading activity...</p>}
+        <span className="siq-badge">Audit</span>
+      </div>
+
+      {isLoading && <div className="ticket-loading">Loading activity...</div>}
 
       {isError && (
-        <p style={{ color: "red" }}>
+        <div className="ticket-alert ticket-alert-error">
           Activity timeline is unavailable for this user.
-        </p>
+        </div>
       )}
 
       {!isLoading && !isError && activities.length === 0 && (
-        <p>No activity yet.</p>
+        <div className="ticket-empty-state">No activity yet.</div>
       )}
 
-      <div style={{ display: "grid", gap: "0.75rem" }}>
+      <div className="activity-list">
         {activities.map((activity) => (
-          <article
-            key={activity.id}
-            style={{
-              border: "1px solid #eee",
-              borderRadius: 8,
-              padding: "0.75rem"
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                gap: "1rem",
-                marginBottom: "0.5rem"
-              }}
-            >
-              <strong>{activityLabels[activity.type]}</strong>
-              <small>{new Date(activity.createdAt).toLocaleString()}</small>
+          <article key={activity.id} className="activity-item">
+            <div className="activity-icon">{activityIcons[activity.type]}</div>
+
+            <div className="activity-content">
+              <div className="activity-content-top">
+                <strong>{activityLabels[activity.type]}</strong>
+                <small>{new Date(activity.createdAt).toLocaleString()}</small>
+              </div>
+
+              <p>{activity.message}</p>
+
+              <span>
+                {activity.actor
+                  ? `${activity.actor.name} · ${activity.actor.email}`
+                  : "System"}
+              </span>
             </div>
-
-            <p style={{ marginTop: 0 }}>{activity.message}</p>
-
-            <small>
-              Actor:{" "}
-              {activity.actor
-                ? `${activity.actor.name} (${activity.actor.email})`
-                : "System"}
-            </small>
           </article>
         ))}
       </div>

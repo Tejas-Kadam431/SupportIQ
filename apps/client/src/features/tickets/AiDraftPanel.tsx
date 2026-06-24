@@ -6,6 +6,7 @@ import {
   type AiDraftTone,
   useGenerateAiDraftMutation
 } from "./aiApi";
+import "./tickets.css";
 
 type Props = {
   ticketId: string;
@@ -88,51 +89,43 @@ export function AiDraftPanel({ ticketId }: Props) {
   }
 
   return (
-    <section
-      style={{
-        border: "1px solid #ddd",
-        borderRadius: 8,
-        padding: "1rem",
-        marginBottom: "1.5rem"
-      }}
-    >
-      <h2>AI Draft Reply</h2>
+    <section className="siq-card ai-draft-card">
+      <div className="ai-draft-header">
+        <div>
+          <div className="ai-draft-icon">✦</div>
+          <h2>AI Draft Reply</h2>
+          <p>
+            Generate a source-grounded support reply using ticket context and
+            matching knowledge-base chunks.
+          </p>
+        </div>
 
-      <p style={{ color: "#555" }}>
-        Generate a suggested reply using ticket details and matching
-        knowledge-base chunks.
-      </p>
+        {confidence && (
+          <span className={`siq-badge ${confidenceClass(confidence)}`}>
+            {confidence} confidence
+          </span>
+        )}
+      </div>
 
-      <div
-        style={{
-          display: "flex",
-          gap: "0.75rem",
-          alignItems: "end",
-          flexWrap: "wrap",
-          marginBottom: "1rem"
-        }}
-      >
-        <label>
-          Tone
+      <div className="ai-draft-controls">
+        <div className="ticket-field">
+          <label htmlFor="ai-tone">Tone</label>
           <select
+            id="ai-tone"
             value={tone}
             onChange={(event) => setTone(event.target.value as AiDraftTone)}
-            style={{
-              display: "block",
-              padding: "0.6rem",
-              marginTop: "0.4rem"
-            }}
           >
             {tones.map((item) => (
               <option key={item} value={item}>
-                {item}
+                {formatLabel(item)}
               </option>
             ))}
           </select>
-        </label>
+        </div>
 
         <button
           type="button"
+          className="siq-button siq-button-primary"
           onClick={handleGenerateDraft}
           disabled={isGenerating}
         >
@@ -140,41 +133,24 @@ export function AiDraftPanel({ ticketId }: Props) {
         </button>
       </div>
 
-      {errorMessage && <p style={{ color: "red" }}>{errorMessage}</p>}
+      {errorMessage && (
+        <div className="ticket-alert ticket-alert-error">{errorMessage}</div>
+      )}
 
-      {draft && (
-        <div style={{ marginTop: "1rem" }}>
-          <div
-            style={{
-              display: "flex",
-              gap: "1rem",
-              flexWrap: "wrap",
-              marginBottom: "0.75rem"
-            }}
-          >
-            <span>
-              <strong>Provider:</strong> {provider}
+      {draft ? (
+        <div className="ai-draft-result">
+          <div className="ai-draft-meta">
+            <span className="siq-badge siq-badge-blue">
+              Provider: {provider || "unknown"}
             </span>
-
-            <span>
-              <strong>Confidence:</strong> {confidence}
-            </span>
-
-            <span>
-              <strong>Tone:</strong> {tone}
+            <span className="siq-badge">Tone: {formatLabel(tone)}</span>
+            <span className="siq-badge">
+              Sources: {sources.length}
             </span>
           </div>
 
           {warnings.length > 0 && (
-            <div
-              style={{
-                border: "1px solid #f0c36d",
-                borderRadius: 8,
-                padding: "0.75rem",
-                marginBottom: "0.75rem",
-                background: "#fff8e5"
-              }}
-            >
+            <div className="ai-warning-box">
               <strong>Review warnings</strong>
               <ul>
                 {warnings.map((warning) => (
@@ -185,24 +161,20 @@ export function AiDraftPanel({ ticketId }: Props) {
           )}
 
           <textarea
+            className="ai-draft-textarea"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            rows={10}
-            style={{
-              width: "100%",
-              padding: "0.75rem",
-              resize: "vertical",
-              marginBottom: "0.75rem"
-            }}
+            rows={9}
           />
 
-          <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-            <button type="button" onClick={handleCopyDraft}>
+          <div className="ai-draft-actions">
+            <button type="button" className="siq-button" onClick={handleCopyDraft}>
               Copy draft
             </button>
 
             <button
               type="button"
+              className="siq-button siq-button-primary"
               onClick={handleSendDraft}
               disabled={isSending || !draft.trim()}
             >
@@ -210,47 +182,39 @@ export function AiDraftPanel({ ticketId }: Props) {
             </button>
           </div>
 
-          {copyMessage && <p>{copyMessage}</p>}
+          {copyMessage && <p className="ai-copy-message">{copyMessage}</p>}
+        </div>
+      ) : (
+        <div className="ai-draft-empty">
+          <strong>No draft generated yet</strong>
+          <p>
+            Choose a tone and generate a draft when you are ready to respond.
+          </p>
         </div>
       )}
 
       {sources.length > 0 && (
-        <div style={{ marginTop: "1.5rem" }}>
-          <h3>Sources used</h3>
+        <div className="ai-sources-section">
+          <div className="siq-card-header">
+            <div>
+              <h3 className="siq-card-title">Sources used</h3>
+              <p className="dashboard-card-subtitle">
+                Knowledge-base chunks used to ground this draft.
+              </p>
+            </div>
+          </div>
 
-          <div style={{ display: "grid", gap: "0.75rem" }}>
+          <div className="ai-source-list">
             {sources.map((source) => (
-              <article
-                key={source.chunkId}
-                style={{
-                  border: "1px solid #eee",
-                  borderRadius: 8,
-                  padding: "0.75rem"
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: "1rem",
-                    marginBottom: "0.5rem"
-                  }}
-                >
+              <article key={source.chunkId} className="ai-source-card">
+                <div className="ai-source-card-header">
                   <strong>{source.documentName}</strong>
-                  <small>Score: {source.score}</small>
+                  <span className="siq-badge">Score {source.score}</span>
                 </div>
 
                 <small>Chunk #{source.chunkIndex + 1}</small>
 
-                <p
-                  style={{
-                    whiteSpace: "pre-wrap",
-                    marginBottom: 0,
-                    marginTop: "0.5rem"
-                  }}
-                >
-                  {source.content}
-                </p>
+                <p>{source.content}</p>
               </article>
             ))}
           </div>
@@ -258,11 +222,25 @@ export function AiDraftPanel({ ticketId }: Props) {
       )}
 
       {draft && sources.length === 0 && (
-        <p style={{ marginTop: "1rem", color: "#555" }}>
+        <div className="ai-no-sources">
           No matching knowledge-base sources were found. Review this draft
           carefully before sending.
-        </p>
+        </div>
       )}
     </section>
   );
+}
+
+function confidenceClass(confidence: AiDraftConfidence) {
+  if (confidence === "HIGH") return "siq-badge-green";
+  if (confidence === "MEDIUM") return "siq-badge-orange";
+  return "siq-badge-red";
+}
+
+function formatLabel(value: string) {
+  return value
+    .toLowerCase()
+    .split("_")
+    .map((part) => part[0].toUpperCase() + part.slice(1))
+    .join(" ");
 }

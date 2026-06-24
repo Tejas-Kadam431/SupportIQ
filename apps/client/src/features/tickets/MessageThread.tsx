@@ -5,6 +5,7 @@ import {
   useListMessagesQuery
 } from "./messagesApi";
 import { useTicketRealtime } from "../realtime/useTicketRealtime";
+import "./tickets.css";
 
 type Props = {
   ticketId: string;
@@ -54,72 +55,73 @@ export function MessageThread({ ticketId }: Props) {
   }
 
   return (
-    <section
-      style={{
-        border: "1px solid #ddd",
-        borderRadius: 8,
-        padding: "1rem"
-      }}
-    >
-      <h2>Messages</h2>
+    <section className="siq-card message-thread-card">
+      <div className="siq-card-header">
+        <div>
+          <h2 className="siq-card-title">Messages</h2>
+          <p className="dashboard-card-subtitle">
+            Public customer-agent conversation with real-time updates.
+          </p>
+        </div>
 
-      {isLoading && <p>Loading messages...</p>}
+        <span className="siq-badge siq-badge-blue">Live</span>
+      </div>
 
-      {isError && <p style={{ color: "red" }}>Failed to load messages.</p>}
+      {isLoading && <div className="ticket-loading">Loading messages...</div>}
 
-      {!isLoading && messages.length === 0 && (
-        <p>No messages yet. Start the conversation.</p>
+      {isError && (
+        <div className="ticket-alert ticket-alert-error">Failed to load messages.</div>
       )}
 
-      <div style={{ display: "grid", gap: "0.75rem", marginBottom: "1rem" }}>
+      {!isLoading && messages.length === 0 && (
+        <div className="ticket-empty-state">
+          No messages yet. Start the conversation.
+        </div>
+      )}
+
+      <div className="message-list">
         {messages.map((message) => {
           const isMine = message.senderId === user?.id;
 
           return (
             <article
               key={message.id}
-              style={{
-                border: "1px solid #eee",
-                borderRadius: 8,
-                padding: "0.75rem",
-                background: isMine ? "#f8f8f8" : "white"
-              }}
+              className={isMine ? "message-card message-card-mine" : "message-card"}
             >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: "1rem",
-                  marginBottom: "0.5rem"
-                }}
-              >
-                <strong>{message.sender.name}</strong>
+              <div className="message-card-header">
+                <div className="message-author">
+                  <div className="message-avatar">
+                    {(message.sender.name[0] ?? "U").toUpperCase()}
+                  </div>
+
+                  <div>
+                    <strong>{message.sender.name}</strong>
+                    <span>{message.sender.email}</span>
+                  </div>
+                </div>
+
                 <small>{new Date(message.createdAt).toLocaleString()}</small>
               </div>
 
-              <p style={{ whiteSpace: "pre-wrap", margin: 0 }}>
-                {message.body}
-              </p>
+              <p>{message.body}</p>
             </article>
           );
         })}
       </div>
 
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleSubmit} className="message-composer">
         <textarea
           value={body}
           onChange={(event) => setBody(event.target.value)}
           placeholder="Write a reply..."
           rows={4}
-          style={{
-            width: "100%",
-            padding: "0.75rem",
-            resize: "vertical",
-            marginBottom: "0.75rem"
-          }}
         />
 
-        <button type="submit" disabled={isSending || !body.trim()}>
+        <button
+          type="submit"
+          className="siq-button siq-button-primary"
+          disabled={isSending || !body.trim()}
+        >
           {isSending ? "Sending..." : "Send message"}
         </button>
       </form>

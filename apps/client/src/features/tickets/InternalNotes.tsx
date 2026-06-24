@@ -3,6 +3,7 @@ import {
   useCreateNoteMutation,
   useListNotesQuery
 } from "./notesApi";
+import "./tickets.css";
 
 type Props = {
   ticketId: string;
@@ -41,76 +42,67 @@ export function InternalNotes({ ticketId }: Props) {
   }
 
   return (
-    <section
-      style={{
-        border: "1px solid #ddd",
-        borderRadius: 8,
-        padding: "1rem"
-      }}
-    >
-      <h2>Internal Notes</h2>
-      <p style={{ fontSize: "0.9rem", color: "#555" }}>
-        Notes are visible only to support staff.
-      </p>
+    <section className="siq-card internal-notes-card">
+      <div className="siq-card-header">
+        <div>
+          <h2 className="siq-card-title">Internal Notes</h2>
+          <p className="dashboard-card-subtitle">
+            Private notes visible only to support staff.
+          </p>
+        </div>
 
-      {isLoading && <p>Loading notes...</p>}
+        <span className="siq-badge siq-badge-orange">Staff only</span>
+      </div>
+
+      {isLoading && <div className="ticket-loading">Loading notes...</div>}
 
       {isError && (
-        <p style={{ color: "red" }}>
+        <div className="ticket-alert ticket-alert-error">
           Internal notes are unavailable for this user.
-        </p>
+        </div>
       )}
 
       {!isLoading && !isError && notes.length === 0 && (
-        <p>No internal notes yet.</p>
+        <div className="ticket-empty-state">No internal notes yet.</div>
       )}
 
-      <div style={{ display: "grid", gap: "0.75rem", marginBottom: "1rem" }}>
+      <div className="internal-note-list">
         {notes.map((note) => (
-          <article
-            key={note.id}
-            style={{
-              border: "1px solid #eee",
-              borderRadius: 8,
-              padding: "0.75rem",
-              background: "#fffdf5"
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                gap: "1rem",
-                marginBottom: "0.5rem"
-              }}
-            >
-              <strong>{note.author.name}</strong>
+          <article key={note.id} className="internal-note-card">
+            <div className="internal-note-header">
+              <div className="message-author">
+                <div className="message-avatar internal-note-avatar">
+                  {(note.author.name[0] ?? "U").toUpperCase()}
+                </div>
+
+                <div>
+                  <strong>{note.author.name}</strong>
+                  <span>{note.author.email}</span>
+                </div>
+              </div>
+
               <small>{new Date(note.createdAt).toLocaleString()}</small>
             </div>
 
-            <p style={{ whiteSpace: "pre-wrap", margin: 0 }}>
-              {note.body}
-            </p>
+            <p>{note.body}</p>
           </article>
         ))}
       </div>
 
       {!isError && (
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} className="internal-note-form">
           <textarea
             value={body}
             onChange={(event) => setBody(event.target.value)}
             placeholder="Add an internal note..."
             rows={4}
-            style={{
-              width: "100%",
-              padding: "0.75rem",
-              resize: "vertical",
-              marginBottom: "0.75rem"
-            }}
           />
 
-          <button type="submit" disabled={isAdding || !body.trim()}>
+          <button
+            type="submit"
+            className="siq-button siq-button-primary"
+            disabled={isAdding || !body.trim()}
+          >
             {isAdding ? "Adding..." : "Add note"}
           </button>
         </form>
