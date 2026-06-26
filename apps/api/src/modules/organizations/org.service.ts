@@ -7,6 +7,8 @@ import type {
   UpdateOrganizationInput
 } from "./org.schema.js";
 
+type Role = "OWNER" | "ADMIN" | "AGENT" | "CUSTOMER";
+
 function slugify(value: string) {
   return value
     .toLowerCase()
@@ -32,7 +34,44 @@ async function createUniqueSlug(name: string) {
   }
 }
 
-export async function createOrganization(userId: string, input: CreateOrganizationInput) {
+function assertRoleIsNotOwner(role: Role) {
+  if (role === "OWNER") {
+    throw new AppError("Owner role is protected", 403);
+  }
+}
+
+function assertActorCanAssignRole(actorRole: Role, nextRole: Role) {
+  if (nextRole === "OWNER") {
+    throw new AppError("Owner role cannot be assigned manually", 403);
+  }
+
+  if (actorRole === "OWNER") return;
+
+  if (actorRole !== "ADMIN") {
+    throw new AppError("Insufficient permissions", 403);
+  }
+
+  if (nextRole === "ADMIN") {
+    throw new AppError("Admins cannot grant admin access", 403);
+  }
+}
+
+function assertActorCanManageTargetRole(actorRole: Role, targetRole: Role) {
+  if (actorRole === "OWNER") return;
+
+  if (actorRole !== "ADMIN") {
+    throw new AppError("Insufficient permissions", 403);
+  }
+
+  if (targetRole === "OWNER" || targetRole === "ADMIN") {
+    throw new AppError("Admins cannot manage owners or other admins", 403);
+  }
+}
+
+export async function createOrganization(
+  userId: string,
+  input: CreateOrganizationInput
+) {
   const slug = await createUniqueSlug(input.name);
 
   const organization = await prisma.$transaction(async (tx) => {
@@ -127,7 +166,7 @@ export async function updateOrganization(
 }
 
 export async function listOrganizationMembers(userId: string, orgId: string) {
-  await assertOrgMember(userId, orgId);
+  await assertOrgRole(userId, orgId, ["OWNER", "ADMIN"]);
 
   return prisma.organizationMember.findMany({
     where: {
@@ -150,8 +189,20 @@ export async function listOrganizationMembers(userId: string, orgId: string) {
   });
 }
 
-export async function addOrganizationMember(userId: string, orgId: string, input: AddMemberInput) {
-  await assertOrgRole(userId, orgId, ["OWNER", "ADMIN"]);
+export async function addOrganizationMember(
+  userId: string,
+  orgId: string,
+  input: AddMemberInput
+) {
+  const actorMembership = await assertOrgRole(userId, orgId, [
+    "OWNER",
+    "ADMIN"
+  ]);
+
+  const actorRole = actorMembership.role as Role;
+  const nextRole = input.role as Role;
+
+  assertActorCanAssignRole(actorRole, nextRole);
 
   const userToAdd = await prisma.user.findUnique({
     where: {
@@ -180,7 +231,7 @@ export async function addOrganizationMember(userId: string, orgId: string, input
     data: {
       organizationId: orgId,
       userId: userToAdd.id,
-      role: input.role
+      role: nextRole
     },
     include: {
       user: {
@@ -201,7 +252,15 @@ export async function updateOrganizationMemberRole(
   memberId: string,
   input: UpdateMemberRoleInput
 ) {
-  const actorMembership = await assertOrgRole(userId, orgId, ["OWNER", "ADMIN"]);
+  const actorMembership = await assertOrgRole(userId, orgId, [
+    "OWNER",
+    "ADMIN"
+  ]);
+
+  const actorRole = actorMembership.role as Role;
+  const nextRole = input.role as Role;
+
+  assertActorCanAssignRole(actorRole, nextRole);
 
   const targetMembership = await prisma.organizationMember.findUnique({
     where: {
@@ -213,20 +272,17 @@ export async function updateOrganizationMemberRole(
     throw new AppError("Member not found", 404);
   }
 
-  if (targetMembership.role === "OWNER") {
-    throw new AppError("Owner role cannot be changed", 403);
-  }
+  const targetRole = targetMembership.role as Role;
 
-  if (actorMembership.role === "ADMIN" && targetMembership.role === "ADMIN") {
-    throw new AppError("Admins cannot modify other admins", 403);
-  }
+  assertRoleIsNotOwner(targetRole);
+  assertActorCanManageTargetRole(actorRole, targetRole);
 
   return prisma.organizationMember.update({
     where: {
       id: memberId
     },
     data: {
-      role: input.role
+      role: nextRole
     },
     include: {
       user: {
@@ -241,8 +297,17 @@ export async function updateOrganizationMemberRole(
   });
 }
 
-export async function removeOrganizationMember(userId: string, orgId: string, memberId: string) {
-  const actorMembership = await assertOrgRole(userId, orgId, ["OWNER", "ADMIN"]);
+export async function removeOrganizationMember(
+  userId: string,
+  orgId: string,
+  memberId: string
+) {
+  const actorMembership = await assertOrgRole(userId, orgId, [
+    "OWNER",
+    "ADMIN"
+  ]);
+
+  const actorRole = actorMembership.role as Role;
 
   const targetMembership = await prisma.organizationMember.findUnique({
     where: {
@@ -254,13 +319,10 @@ export async function removeOrganizationMember(userId: string, orgId: string, me
     throw new AppError("Member not found", 404);
   }
 
-  if (targetMembership.role === "OWNER") {
-    throw new AppError("Owner cannot be removed from organization", 403);
-  }
+  const targetRole = targetMembership.role as Role;
 
-  if (actorMembership.role === "ADMIN" && targetMembership.role === "ADMIN") {
-    throw new AppError("Admins cannot remove other admins", 403);
-  }
+  assertRoleIsNotOwner(targetRole);
+  assertActorCanManageTargetRole(actorRole, targetRole);
 
   await prisma.organizationMember.delete({
     where: {
@@ -286,7 +348,11 @@ export async function assertOrgMember(userId: string, orgId: string) {
   return membership;
 }
 
-export async function assertOrgRole(userId: string, orgId: string, allowedRoles: string[]) {
+export async function assertOrgRole(
+  userId: string,
+  orgId: string,
+  allowedRoles: string[]
+) {
   const membership = await assertOrgMember(userId, orgId);
 
   if (!allowedRoles.includes(membership.role)) {

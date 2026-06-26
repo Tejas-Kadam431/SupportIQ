@@ -1,15 +1,15 @@
 import fs from "fs/promises";
-import path from "path";
-import { createRequire } from "module";
 import { AppError } from "../../common/errors/AppError.js";
+import { createRequire } from "node:module";
+import path from "node:path";
 
-const require = createRequire(import.meta.url);
+const nodeRequire = createRequire(path.join(process.cwd(), "package.json"));
 
 type PdfParseResult = {
   text: string;
 };
 
-const pdfParse = require("pdf-parse") as (
+const pdfParse = nodeRequire("pdf-parse") as (
   buffer: Buffer
 ) => Promise<PdfParseResult>;
 

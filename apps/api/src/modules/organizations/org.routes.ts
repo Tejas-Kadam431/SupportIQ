@@ -42,6 +42,7 @@ orgRoutes.patch(
 orgRoutes.get(
   "/:orgId/members",
   validate(orgIdParamSchema),
+  requireOrgRole(["OWNER", "ADMIN"]),
   asyncHandler(listMembers)
 );
 

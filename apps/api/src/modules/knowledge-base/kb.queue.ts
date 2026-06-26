@@ -67,3 +67,11 @@ export function startKnowledgeProcessingWorker() {
 
   return worker;
 }
+export async function closeKnowledgeProcessingResources() {
+  if (worker) {
+    await worker.close();
+    worker = null;
+  }
+
+  await knowledgeProcessingQueue.close();
+}
