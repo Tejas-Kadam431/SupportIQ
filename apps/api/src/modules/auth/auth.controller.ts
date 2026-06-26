@@ -1,4 +1,4 @@
-import type { Request, Response } from "express";
+import type { CookieOptions, Request, Response } from "express";
 import { AppError } from "../../common/errors/AppError.js";
 import type { AuthenticatedRequest } from "../../common/middleware/auth.middleware.js";
 import {
@@ -10,18 +10,37 @@ import {
 } from "./auth.service.js";
 
 const REFRESH_COOKIE_NAME = "supportiq_refresh_token";
+const REFRESH_COOKIE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
+
+function getRefreshCookieOptions(): CookieOptions {
+  const isProduction = process.env.NODE_ENV === "production";
+
+  return {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? "none" : "lax",
+    path: "/",
+    maxAge: REFRESH_COOKIE_MAX_AGE
+  };
+}
+
+function getClearRefreshCookieOptions(): CookieOptions {
+  const isProduction = process.env.NODE_ENV === "production";
+
+  return {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? "none" : "lax",
+    path: "/"
+  };
+}
 
 function setRefreshTokenCookie(res: Response, refreshToken: string) {
-  res.cookie(REFRESH_COOKIE_NAME, refreshToken, {
-    httpOnly: true,
-    secure: false,
-    sameSite: "lax",
-    maxAge: 7 * 24 * 60 * 60 * 1000
-  });
+  res.cookie(REFRESH_COOKIE_NAME, refreshToken, getRefreshCookieOptions());
 }
 
 function clearRefreshTokenCookie(res: Response) {
-  res.clearCookie(REFRESH_COOKIE_NAME);
+  res.clearCookie(REFRESH_COOKIE_NAME, getClearRefreshCookieOptions());
 }
 
 function getRefreshTokenFromRequest(req: Request) {
