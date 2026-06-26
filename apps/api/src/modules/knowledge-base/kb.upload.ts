@@ -1,8 +1,18 @@
-import path from "path";
+import fs from "node:fs";
+import path from "node:path";
 import multer from "multer";
 import { AppError } from "../../common/errors/AppError.js";
 
-const UPLOAD_DIR = path.join(process.cwd(), "uploads", "kb");
+const UPLOAD_ROOT_DIR =
+  process.env.UPLOAD_ROOT_DIR ?? path.join(process.cwd(), "uploads");
+
+const UPLOAD_DIR = path.join(UPLOAD_ROOT_DIR, "kb");
+
+function ensureUploadDir() {
+  fs.mkdirSync(UPLOAD_DIR, {
+    recursive: true
+  });
+}
 
 const allowedMimeTypes = new Set([
   "application/pdf",
@@ -15,7 +25,12 @@ const allowedExtensions = new Set([".pdf", ".txt", ".md", ".markdown"]);
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {
-    cb(null, UPLOAD_DIR);
+    try {
+      ensureUploadDir();
+      cb(null, UPLOAD_DIR);
+    } catch {
+      cb(new AppError("Failed to prepare upload directory", 500), UPLOAD_DIR);
+    }
   },
   filename: (_req, file, cb) => {
     const extension = path.extname(file.originalname).toLowerCase();
