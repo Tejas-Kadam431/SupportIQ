@@ -17,3 +17,4 @@ coverage
 .vscode
 
 .env.test
+DEMO_CREDENTIALS.txt

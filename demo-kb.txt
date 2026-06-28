@@ -1,0 +1,20 @@
+﻿Password Reset Policy
+
+If a customer does not receive a password reset email:
+1. Ask them to check spam, promotions, and blocked sender folders.
+2. Confirm the email address on the account.
+3. Ask them to wait 10 minutes before requesting another reset.
+4. If the issue continues, escalate to engineering to check email delivery logs.
+
+Refund Policy
+
+Customers can request a refund within 7 days of purchase if the service was not used heavily.
+Refund requests should include the purchase date, account email, and reason for cancellation.
+
+Billing Issue Policy
+
+If a customer reports a duplicate charge:
+1. Confirm the transaction date and amount.
+2. Check whether both charges belong to the same billing period.
+3. If duplicate billing is confirmed, escalate to billing operations for reversal.
+4. Apologize and provide a timeline for resolution.
