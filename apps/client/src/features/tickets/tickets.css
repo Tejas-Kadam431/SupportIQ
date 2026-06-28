@@ -1050,3 +1050,52 @@
   min-height: 2.8rem;
   padding-inline: 1.15rem;
 }
+.ticket-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem;
+  align-items: start;
+}
+
+.ticket-card-main,
+.ticket-card-content,
+.ticket-card-body,
+.ticket-card-text {
+  min-width: 0;
+}
+
+.ticket-card h2,
+.ticket-card h3,
+.ticket-card p {
+  min-width: 0;
+}
+
+.ticket-card p {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ticket-card-badges,
+.ticket-card-meta,
+.ticket-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.45rem;
+  min-width: max-content;
+}
+
+@media (max-width: 760px) {
+  .ticket-card {
+    grid-template-columns: 1fr;
+  }
+
+  .ticket-card-badges,
+  .ticket-card-meta,
+  .ticket-badges {
+    justify-content: flex-start;
+    min-width: 0;
+  }
+}
