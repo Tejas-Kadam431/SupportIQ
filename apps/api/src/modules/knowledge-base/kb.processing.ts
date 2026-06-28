@@ -2,6 +2,7 @@ import { prisma } from "../../config/prisma.js";
 import { AppError } from "../../common/errors/AppError.js";
 import { chunkText } from "./kb.chunker.js";
 import { extractTextFromFile } from "./kb.text.js";
+import { saveKnowledgeChunkEmbedding } from "./kb.vector.js";
 
 export async function processKnowledgeDocument(orgId: string, documentId: string) {
   const document = await prisma.knowledgeDocument.findUnique({
@@ -32,40 +33,57 @@ export async function processKnowledgeDocument(orgId: string, documentId: string
       throw new AppError("No readable text found in document", 400);
     }
 
-    const chunkRows = chunks.map((chunk) => ({
-      organizationId: orgId,
-      documentId: document.id,
-      chunkIndex: chunk.chunkIndex,
-      content: chunk.content,
-      tokenCount: chunk.tokenCount
-    }));
-
-    await prisma.$transaction(async (tx) => {
+    const createdChunks = await prisma.$transaction(async (tx) => {
       await tx.knowledgeChunk.deleteMany({
         where: {
           documentId: document.id
         }
       });
 
-      await tx.knowledgeChunk.createMany({
-        data: chunkRows
-      });
+      const rows = [];
 
-      await tx.knowledgeDocument.update({
-        where: {
-          id: document.id
-        },
-        data: {
-          status: "READY",
-          errorMessage: null
-        }
-      });
+      for (const chunk of chunks) {
+        const createdChunk = await tx.knowledgeChunk.create({
+          data: {
+            organizationId: orgId,
+            documentId: document.id,
+            chunkIndex: chunk.chunkIndex,
+            content: chunk.content,
+            tokenCount: chunk.tokenCount
+          }
+        });
+
+        rows.push(createdChunk);
+      }
+
+      return rows;
+    });
+
+    let embeddedChunkCount = 0;
+
+    for (const chunk of createdChunks) {
+      const saved = await saveKnowledgeChunkEmbedding(chunk.id, chunk.content);
+
+      if (saved) {
+        embeddedChunkCount += 1;
+      }
+    }
+
+    await prisma.knowledgeDocument.update({
+      where: {
+        id: document.id
+      },
+      data: {
+        status: "READY",
+        errorMessage: null
+      }
     });
 
     return {
       documentId: document.id,
       status: "READY" as const,
-      chunkCount: chunks.length
+      chunkCount: chunks.length,
+      embeddedChunkCount
     };
   } catch (error) {
     const message =

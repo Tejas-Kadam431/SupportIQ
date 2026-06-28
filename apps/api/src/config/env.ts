@@ -3,6 +3,11 @@ import { z } from "zod";
 
 dotenv.config();
 
+const optionalNonEmptyString = z.preprocess(
+  (value) => (value === "" ? undefined : value),
+  z.string().optional()
+);
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().default(5000),
@@ -12,20 +17,28 @@ const envSchema = z.object({
   JWT_REFRESH_SECRET: z.string().min(1),
   JWT_ACCESS_EXPIRES_IN: z.string().default("15m"),
   JWT_REFRESH_EXPIRES_IN: z.string().default("7d"),
-  OPENAI_API_KEY: z.preprocess(
-    (value) => (value === "" ? undefined : value),
-    z.string().optional()
-  ),
+
+  OPENAI_API_KEY: optionalNonEmptyString,
+
   OPENAI_MODEL: z.preprocess(
     (value) => (value === "" || value === undefined ? "gpt-4o-mini" : value),
     z.string()
   ),
+
+  OPENAI_EMBEDDING_MODEL: z.preprocess(
+    (value) =>
+      value === "" || value === undefined ? "text-embedding-3-small" : value,
+    z.string()
+  )
 });
 
 const parsedEnv = envSchema.safeParse(process.env);
 
 if (!parsedEnv.success) {
-  console.error("Invalid environment variables:", parsedEnv.error.flatten().fieldErrors);
+  console.error(
+    "Invalid environment variables:",
+    parsedEnv.error.flatten().fieldErrors
+  );
   process.exit(1);
 }
 
