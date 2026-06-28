@@ -61,10 +61,6 @@ export function AppLayout() {
             className="app-sidebar-logo-image"
             src="/supportiq-icon-192.png"
             alt="SupportIQ logo"
-          /><img
-            className="app-sidebar-logo-image"
-            src="/supportiq-icon-192.png"
-            alt="SupportIQ logo"
           />
           <div>
             <h1>SupportIQ</h1>
