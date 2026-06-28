@@ -10,6 +10,7 @@ import {
   useRemoveMemberMutation,
   useUpdateMemberRoleMutation
 } from "./orgApi";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 import "./organizations.css";
 
 const editableRoles: Exclude<Role, "OWNER">[] = ["ADMIN", "AGENT", "CUSTOMER"];
@@ -21,6 +22,7 @@ export function MembersPage() {
   const [role, setRole] = useState<Exclude<Role, "OWNER">>("AGENT");
   const [formError, setFormError] = useState("");
   const [message, setMessage] = useState("");
+  const [actionError, setActionError] = useState("");
 
   const {
     data,
@@ -72,6 +74,7 @@ export function MembersPage() {
 
     setFormError("");
     setMessage("");
+    setActionError("");
 
     try {
       await addMember({
@@ -86,7 +89,10 @@ export function MembersPage() {
     } catch (error) {
       console.error("Failed to add member:", error);
       setFormError(
-        "Failed to add member. The user must already have a SupportIQ account."
+        getApiErrorMessage(
+          error,
+          "Failed to add member. The user must already have a SupportIQ account."
+        )
       );
     }
   }
@@ -97,6 +103,8 @@ export function MembersPage() {
   ) {
     if (!orgId) return;
 
+    setActionError("");
+
     try {
       await updateMemberRole({
         orgId,
@@ -105,6 +113,7 @@ export function MembersPage() {
       }).unwrap();
     } catch (error) {
       console.error("Failed to update role:", error);
+      setActionError(getApiErrorMessage(error, "Failed to update member role."));
     }
   }
 
@@ -114,6 +123,8 @@ export function MembersPage() {
     const confirmed = window.confirm("Remove this member?");
     if (!confirmed) return;
 
+    setActionError("");
+
     try {
       await removeMember({
         orgId,
@@ -121,6 +132,7 @@ export function MembersPage() {
       }).unwrap();
     } catch (error) {
       console.error("Failed to remove member:", error);
+      setActionError(getApiErrorMessage(error, "Failed to remove member."));
     }
   }
 
@@ -178,6 +190,7 @@ export function MembersPage() {
                   setEmail(event.target.value);
                   setFormError("");
                   setMessage("");
+                  setActionError("");
                 }}
                 placeholder="user@example.com"
                 type="email"
@@ -190,9 +203,12 @@ export function MembersPage() {
               <select
                 id="member-role"
                 value={role}
-                onChange={(event) =>
-                  setRole(event.target.value as Exclude<Role, "OWNER">)
-                }
+                onChange={(event) => {
+                  setRole(event.target.value as Exclude<Role, "OWNER">);
+                  setFormError("");
+                  setMessage("");
+                  setActionError("");
+                }}
               >
                 {editableRoles.map((item) => (
                   <option key={item} value={item}>
@@ -229,6 +245,10 @@ export function MembersPage() {
             <div className="member-alert member-alert-error">
               Failed to load members.
             </div>
+          )}
+
+          {actionError && (
+            <div className="member-alert member-alert-error">{actionError}</div>
           )}
 
           {!isLoading && !isError && members.length === 0 && (

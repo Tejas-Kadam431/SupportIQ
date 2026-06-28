@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { useUploadKnowledgeDocumentMutation } from "./kbApi";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 import "./kb.css";
 
 type Props = {
@@ -42,7 +43,7 @@ export function DocumentUpload({ orgId }: Props) {
       }
     } catch (error) {
       console.error("Failed to upload document:", error);
-      setUploadError("Failed to upload document.");
+      setUploadError(getApiErrorMessage(error, "Failed to upload document."));
     }
   }
 

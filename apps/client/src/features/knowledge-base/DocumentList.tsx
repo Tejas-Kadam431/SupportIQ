@@ -1,9 +1,11 @@
+import { useState } from "react";
 import {
   type KnowledgeDocument,
   type KnowledgeDocumentStatus,
   useDeleteKnowledgeDocumentMutation,
   useReprocessKnowledgeDocumentMutation
 } from "./kbApi";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 import "./kb.css";
 
 type Props = {
@@ -21,6 +23,8 @@ export function DocumentList({
   isError,
   isFetching = false
 }: Props) {
+  const [actionError, setActionError] = useState("");
+
   const [deleteDocument, { isLoading: isDeleting }] =
     useDeleteKnowledgeDocumentMutation();
 
@@ -32,6 +36,8 @@ export function DocumentList({
 
     if (!confirmed) return;
 
+    setActionError("");
+
     try {
       await deleteDocument({
         orgId,
@@ -39,10 +45,13 @@ export function DocumentList({
       }).unwrap();
     } catch (error) {
       console.error("Failed to delete document:", error);
+      setActionError(getApiErrorMessage(error, "Failed to delete document."));
     }
   }
 
   async function handleReprocess(documentId: string) {
+    setActionError("");
+
     try {
       await reprocessDocument({
         orgId,
@@ -50,6 +59,7 @@ export function DocumentList({
       }).unwrap();
     } catch (error) {
       console.error("Failed to reprocess document:", error);
+      setActionError(getApiErrorMessage(error, "Failed to reprocess document."));
     }
   }
 
@@ -73,6 +83,10 @@ export function DocumentList({
 
       {isError && (
         <div className="kb-alert kb-alert-error">Failed to load documents.</div>
+      )}
+
+      {actionError && (
+        <div className="kb-alert kb-alert-error">{actionError}</div>
       )}
 
       {!isLoading && !isError && documents.length === 0 && (

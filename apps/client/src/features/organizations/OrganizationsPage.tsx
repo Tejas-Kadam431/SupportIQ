@@ -7,6 +7,7 @@ import {
   useCreateOrganizationMutation,
   useListOrganizationsQuery
 } from "./orgApi";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 import "./organizations.css";
 
 export function OrganizationsPage() {
@@ -55,7 +56,9 @@ export function OrganizationsPage() {
       setMessage("Organization created successfully.");
     } catch (error) {
       console.error("Failed to create organization:", error);
-      setFormError("Failed to create organization. Please try again.");
+      setFormError(
+        getApiErrorMessage(error, "Failed to create organization. Please try again.")
+      );
     }
   }
 

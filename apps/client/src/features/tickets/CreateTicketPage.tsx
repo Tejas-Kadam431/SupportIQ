@@ -6,6 +6,7 @@ import {
   useCreateTicketMutation
 } from "./ticketsApi";
 import "./tickets.css";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 
 const priorities: TicketPriority[] = ["LOW", "MEDIUM", "HIGH", "URGENT"];
 
@@ -70,9 +71,15 @@ export function CreateTicketPage() {
       }).unwrap();
 
       navigate(`/tickets/${response.data.ticket.id}`);
-    } catch (error) {
+    }
+    catch (error) {
       console.error("Failed to create ticket:", error);
-      setFormError("Failed to create ticket. Please check your session and try again.");
+      setFormError(
+        getApiErrorMessage(
+          error,
+          "Failed to create ticket. Please check your session and try again."
+        )
+      );
     }
   }
 

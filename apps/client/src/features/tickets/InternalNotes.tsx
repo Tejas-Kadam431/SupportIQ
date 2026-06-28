@@ -3,6 +3,7 @@ import {
   useCreateNoteMutation,
   useListNotesQuery
 } from "./notesApi";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 import "./tickets.css";
 
 type Props = {
@@ -11,6 +12,7 @@ type Props = {
 
 export function InternalNotes({ ticketId }: Props) {
   const [body, setBody] = useState("");
+  const [noteError, setNoteError] = useState("");
 
   const {
     data,
@@ -29,6 +31,8 @@ export function InternalNotes({ ticketId }: Props) {
 
     if (!trimmedBody) return;
 
+    setNoteError("");
+
     try {
       await createNote({
         ticketId,
@@ -38,6 +42,9 @@ export function InternalNotes({ ticketId }: Props) {
       setBody("");
     } catch (error) {
       console.error("Failed to add internal note:", error);
+      setNoteError(
+        getApiErrorMessage(error, "Failed to add internal note. Please try again.")
+      );
     }
   }
 
@@ -60,6 +67,10 @@ export function InternalNotes({ ticketId }: Props) {
         <div className="ticket-alert ticket-alert-error">
           Internal notes are unavailable for this user.
         </div>
+      )}
+
+      {noteError && (
+        <div className="ticket-alert ticket-alert-error">{noteError}</div>
       )}
 
       {!isLoading && !isError && notes.length === 0 && (
@@ -93,7 +104,10 @@ export function InternalNotes({ ticketId }: Props) {
         <form onSubmit={handleSubmit} className="internal-note-form">
           <textarea
             value={body}
-            onChange={(event) => setBody(event.target.value)}
+            onChange={(event) => {
+              setBody(event.target.value);
+              setNoteError("");
+            }}
             placeholder="Add an internal note..."
             rows={4}
           />

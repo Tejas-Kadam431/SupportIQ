@@ -7,6 +7,7 @@ import {
   type AiDraftTone,
   useGenerateAiDraftMutation
 } from "./aiApi";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 import "./tickets.css";
 
 type Props = {
@@ -50,7 +51,10 @@ export function AiDraftPanel({ ticketId }: Props) {
     } catch (error) {
       console.error("Failed to generate AI draft:", error);
       setErrorMessage(
-        "Failed to generate AI draft. Make sure you are logged in as owner, admin, or agent."
+        getApiErrorMessage(
+          error,
+          "Failed to generate AI draft. Make sure you are logged in as owner, admin, or agent."
+        )
       );
     }
   }
@@ -78,6 +82,9 @@ export function AiDraftPanel({ ticketId }: Props) {
 
     if (!confirmed) return;
 
+    setErrorMessage("");
+    setCopyMessage("");
+
     try {
       await createMessage({
         ticketId,
@@ -87,7 +94,9 @@ export function AiDraftPanel({ ticketId }: Props) {
       setCopyMessage("Draft sent as message.");
     } catch (error) {
       console.error("Failed to send draft:", error);
-      setErrorMessage("Failed to send draft as message.");
+      setErrorMessage(
+        getApiErrorMessage(error, "Failed to send draft as message.")
+      );
     }
   }
 

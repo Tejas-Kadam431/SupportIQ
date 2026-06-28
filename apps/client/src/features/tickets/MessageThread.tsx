@@ -6,7 +6,7 @@ import {
 } from "./messagesApi";
 import { useTicketRealtime } from "../realtime/useTicketRealtime";
 import "./tickets.css";
-
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 type Props = {
   ticketId: string;
 };
@@ -14,6 +14,7 @@ type Props = {
 export function MessageThread({ ticketId }: Props) {
   const user = useAppSelector((state) => state.auth.user);
   const [body, setBody] = useState("");
+  const [sendError, setSendError] = useState("");
 
   const {
     data,
@@ -41,7 +42,7 @@ export function MessageThread({ ticketId }: Props) {
     const trimmedBody = body.trim();
 
     if (!trimmedBody) return;
-
+    setSendError("");
     try {
       await createMessage({
         ticketId,
@@ -51,6 +52,9 @@ export function MessageThread({ ticketId }: Props) {
       setBody("");
     } catch (error) {
       console.error("Failed to send message:", error);
+      setSendError(
+        getApiErrorMessage(error, "Failed to send message. Please try again.")
+      );
     }
   }
 
@@ -108,11 +112,16 @@ export function MessageThread({ ticketId }: Props) {
           );
         })}
       </div>
-
+      {sendError && (
+        <div className="ticket-alert ticket-alert-error">{sendError}</div>
+      )}
       <form onSubmit={handleSubmit} className="message-composer">
         <textarea
           value={body}
-          onChange={(event) => setBody(event.target.value)}
+          onChange={(event) => {
+            setBody(event.target.value);
+            setSendError("");
+          }}
           placeholder="Write a reply..."
           rows={4}
         />
