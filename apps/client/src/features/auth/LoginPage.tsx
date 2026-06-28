@@ -67,7 +67,11 @@ export function LoginPage() {
     <main className="auth-page">
       <section className="auth-hero">
         <div className="auth-brand">
-          <span className="auth-logo">S</span>
+          <img
+            className="auth-logo-image"
+            src="/supportiq-icon-192.png"
+            alt="SupportIQ logo"
+          />
           <span>SupportIQ</span>
         </div>
 

@@ -397,3 +397,72 @@
   color: #475569;
   line-height: 1.6;
 }
+.kb-empty-state {
+  max-width: 760px;
+  width: 100%;
+  margin: 1.25rem auto 0;
+  padding: 2rem;
+  text-align: center;
+  background:
+    radial-gradient(circle at top right, rgba(15, 107, 255, 0.1), transparent 16rem),
+    white;
+}
+
+.kb-empty-state h2 {
+  margin: 0;
+  font-size: 1.45rem;
+  line-height: 1.2;
+  letter-spacing: -0.04em;
+  color: #334155;
+}
+
+.kb-empty-state p {
+  max-width: 560px;
+  margin: 0.75rem auto 1.25rem;
+  color: #475569;
+  line-height: 1.65;
+}
+
+.kb-empty-state .siq-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  min-height: 2.8rem;
+  padding-inline: 1.15rem;
+}
+.kb-empty-state {
+  max-width: 760px;
+  width: 100%;
+  margin: 1.25rem auto 0;
+  padding: 2rem;
+  text-align: center;
+  background:
+    radial-gradient(circle at top right, rgba(15, 107, 255, 0.1), transparent 16rem),
+    white;
+}
+
+.kb-empty-state h2 {
+  margin: 0;
+  font-size: 1.45rem;
+  line-height: 1.2;
+  letter-spacing: -0.04em;
+  color: #334155;
+}
+
+.kb-empty-state p {
+  max-width: 560px;
+  margin: 0.75rem auto 1.25rem;
+  color: #475569;
+  line-height: 1.65;
+}
+
+.kb-empty-state .siq-button,
+.kb-empty-state a.siq-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  min-height: 2.8rem;
+  padding-inline: 1.15rem;
+}

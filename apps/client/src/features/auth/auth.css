@@ -284,3 +284,10 @@
     border-radius: 1.25rem;
   }
 }
+.auth-logo-image {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.95rem;
+  object-fit: cover;
+  box-shadow: 0 16px 34px rgba(15, 107, 255, 0.26);
+}

@@ -843,12 +843,43 @@
   letter-spacing: -0.03em;
 }
 
-.ticket-page > .ticket-empty-state p,
-.ticket-create-page > .ticket-empty-state p {
+.ticket-empty-state,
+.kb-empty-state {
+  max-width: 760px;
+  width: 100%;
+  margin: 1.25rem auto 0;
+  padding: 2rem;
+  text-align: center;
+  background:
+    radial-gradient(circle at top right, rgba(15, 107, 255, 0.1), transparent 16rem),
+    white;
+}
+
+.ticket-empty-state h2,
+.kb-empty-state h2 {
+  margin: 0;
+  font-size: 1.45rem;
+  line-height: 1.2;
+  letter-spacing: -0.04em;
+  color: #334155;
+}
+
+.ticket-empty-state p,
+.kb-empty-state p {
   max-width: 560px;
-  margin: 0.65rem auto 1.25rem;
+  margin: 0.75rem auto 1.25rem;
   color: #475569;
-  line-height: 1.6;
+  line-height: 1.65;
+}
+
+.ticket-empty-state .siq-button,
+.kb-empty-state .siq-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  min-height: 2.8rem;
+  padding-inline: 1.15rem;
 }
 .ai-grounding-panel {
   border: 1px solid #dbeafe;
@@ -983,4 +1014,39 @@
   .ai-source-card-header-polished {
     flex-direction: column;
   }
+}
+.ticket-empty-state {
+  max-width: 760px;
+  width: 100%;
+  margin: 1.25rem auto 0;
+  padding: 2rem;
+  text-align: center;
+  background:
+    radial-gradient(circle at top right, rgba(15, 107, 255, 0.1), transparent 16rem),
+    white;
+}
+
+.ticket-empty-state h2 {
+  margin: 0;
+  font-size: 1.45rem;
+  line-height: 1.2;
+  letter-spacing: -0.04em;
+  color: #334155;
+}
+
+.ticket-empty-state p {
+  max-width: 560px;
+  margin: 0.75rem auto 1.25rem;
+  color: #475569;
+  line-height: 1.65;
+}
+
+.ticket-empty-state .siq-button,
+.ticket-empty-state a.siq-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  min-height: 2.8rem;
+  padding-inline: 1.15rem;
 }
