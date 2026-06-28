@@ -3,6 +3,7 @@ import { authenticate } from "../../common/middleware/auth.middleware.js";
 import { validate } from "../../common/middleware/validate.middleware.js";
 import { asyncHandler } from "../../common/utils/asyncHandler.js";
 import { requireOrgMember } from "../organizations/org.rbac.js";
+import { blockDemoWrites } from "../../common/middleware/demoReadOnly.middleware.js";
 import {
   assignTicketHandler,
   createTicketHandler,
@@ -25,7 +26,12 @@ export const orgTicketRoutes = Router({
 orgTicketRoutes.use(authenticate);
 orgTicketRoutes.use(requireOrgMember());
 
-orgTicketRoutes.post("/", validate(createTicketSchema), asyncHandler(createTicketHandler));
+orgTicketRoutes.post(
+  "/",
+  blockDemoWrites(),
+  validate(createTicketSchema),
+  asyncHandler(createTicketHandler)
+);
 orgTicketRoutes.get("/", validate(listTicketsSchema), asyncHandler(listTicketsHandler));
 
 export const ticketRoutes = Router();
@@ -40,12 +46,14 @@ ticketRoutes.get(
 
 ticketRoutes.patch(
   "/:ticketId/status",
+  blockDemoWrites(),
   validate(updateTicketStatusSchema),
   asyncHandler(updateTicketStatusHandler)
 );
 
 ticketRoutes.patch(
   "/:ticketId/assign",
+  blockDemoWrites(),
   validate(assignTicketSchema),
   asyncHandler(assignTicketHandler)
 );

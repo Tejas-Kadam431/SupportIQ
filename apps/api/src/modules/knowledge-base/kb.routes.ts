@@ -17,7 +17,9 @@ import {
   orgIdParamSchema,
   searchKnowledgeSchema
 } from "./kb.schema.js";
+import { blockDemoWrites } from "../../common/middleware/demoReadOnly.middleware.js";
 import { uploadKnowledgeDocument } from "./kb.upload.js";
+
 
 export const kbRoutes = Router({
   mergeParams: true
@@ -43,6 +45,7 @@ kbRoutes.post(
   "/documents",
   validate(orgIdParamSchema),
   requireOrgRole(["OWNER", "ADMIN"]),
+  blockDemoWrites(),
   uploadKnowledgeDocument.single("file"),
   asyncHandler(uploadDocumentHandler)
 );
@@ -65,6 +68,7 @@ kbRoutes.post(
   "/documents/:documentId/process",
   validate(documentIdParamSchema),
   requireOrgRole(["OWNER", "ADMIN"]),
+  blockDemoWrites(),
   asyncHandler(reprocessDocumentHandler)
 );
 
@@ -72,5 +76,6 @@ kbRoutes.delete(
   "/documents/:documentId",
   validate(documentIdParamSchema),
   requireOrgRole(["OWNER", "ADMIN"]),
+  blockDemoWrites(),
   asyncHandler(deleteDocumentHandler)
 );

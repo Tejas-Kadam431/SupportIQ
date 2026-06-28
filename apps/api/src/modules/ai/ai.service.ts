@@ -5,6 +5,7 @@ import { AppError } from "../../common/errors/AppError.js";
 import { getTicketOrThrow } from "../tickets/ticket.service.js";
 import { searchKnowledgeBase } from "../knowledge-base/kb.service.js";
 import type { GenerateAiDraftInput } from "./ai.schema.js";
+import { isDemoReadonlyUserId } from "../../common/middleware/demoReadOnly.middleware.js";
 
 type Role = "OWNER" | "ADMIN" | "AGENT" | "CUSTOMER";
 type SearchMode = "semantic" | "keyword";
@@ -376,33 +377,37 @@ export async function generateAiDraftReply(
     provider
   });
 
-  await prisma.activityLog.create({
-    data: {
-      organizationId: ticketDetails.organizationId,
-      ticketId: ticketDetails.id,
-      actorId: userId,
-      type: "AI_REPLY_GENERATED",
-      message: `AI reply generated for ticket: ${ticketDetails.title}`,
-      metadata: {
-        provider,
-        sourceCount: sources.length,
-        searchQuery,
-        searchMode,
-        confidence,
-        warnings,
-        tone: input.tone,
-        sources: sources.map((source) => ({
-          citationLabel: source.citationLabel,
-          documentId: source.documentId,
-          documentName: source.documentName,
-          chunkId: source.chunkId,
-          chunkIndex: source.chunkIndex,
-          score: source.score,
-          searchType: source.searchType
-        }))
+  const shouldWriteActivity = !(await isDemoReadonlyUserId(userId));
+
+  if (shouldWriteActivity) {
+    await prisma.activityLog.create({
+      data: {
+        organizationId: ticketDetails.organizationId,
+        ticketId: ticketDetails.id,
+        actorId: userId,
+        type: "AI_REPLY_GENERATED",
+        message: `AI reply generated for ticket: ${ticketDetails.title}`,
+        metadata: {
+          provider,
+          sourceCount: sources.length,
+          searchQuery,
+          searchMode,
+          confidence,
+          warnings,
+          tone: input.tone,
+          sources: sources.map((source) => ({
+            citationLabel: source.citationLabel,
+            documentId: source.documentId,
+            documentName: source.documentName,
+            chunkId: source.chunkId,
+            chunkIndex: source.chunkIndex,
+            score: source.score,
+            searchType: source.searchType
+          }))
+        }
       }
-    }
-  });
+    });
+  }
 
   return {
     draft,

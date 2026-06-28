@@ -4,6 +4,7 @@ import { validate } from "../../common/middleware/validate.middleware.js";
 import { asyncHandler } from "../../common/utils/asyncHandler.js";
 import { createNoteHandler, listNotesHandler } from "./note.controller.js";
 import { createNoteSchema, ticketIdParamSchema } from "./note.schema.js";
+import { blockDemoWrites } from "../../common/middleware/demoReadOnly.middleware.js";
 
 export const noteRoutes = Router({
   mergeParams: true
@@ -19,6 +20,7 @@ noteRoutes.get(
 
 noteRoutes.post(
   "/",
+  blockDemoWrites(),
   validate(createNoteSchema),
   asyncHandler(createNoteHandler)
 );

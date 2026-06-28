@@ -21,12 +21,18 @@ import {
   updateOrganizationSchema
 } from "./org.schema.js";
 import { requireOrgRole } from "./org.rbac.js";
+import { blockDemoWrites } from "../../common/middleware/demoReadOnly.middleware.js";
 
 export const orgRoutes = Router();
 
 orgRoutes.use(authenticate);
 
-orgRoutes.post("/", validate(createOrganizationSchema), asyncHandler(createOrg));
+orgRoutes.post(
+  "/",
+  blockDemoWrites(),
+  validate(createOrganizationSchema),
+  asyncHandler(createOrg)
+);
 
 orgRoutes.get("/", asyncHandler(listOrgs));
 
@@ -36,6 +42,7 @@ orgRoutes.patch(
   "/:orgId",
   validate(updateOrganizationSchema),
   requireOrgRole(["OWNER", "ADMIN"]),
+  blockDemoWrites(),
   asyncHandler(updateOrg)
 );
 
@@ -50,6 +57,7 @@ orgRoutes.post(
   "/:orgId/members",
   validate(addMemberSchema),
   requireOrgRole(["OWNER", "ADMIN"]),
+  blockDemoWrites(),
   asyncHandler(addMember)
 );
 
@@ -57,6 +65,7 @@ orgRoutes.patch(
   "/:orgId/members/:memberId",
   validate(updateMemberRoleSchema),
   requireOrgRole(["OWNER", "ADMIN"]),
+  blockDemoWrites(),
   asyncHandler(updateMemberRole)
 );
 
@@ -64,5 +73,6 @@ orgRoutes.delete(
   "/:orgId/members/:memberId",
   validate(memberParamSchema),
   requireOrgRole(["OWNER", "ADMIN"]),
+  blockDemoWrites(),
   asyncHandler(removeMember)
 );
