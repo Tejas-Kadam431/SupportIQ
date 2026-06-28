@@ -3,6 +3,7 @@ import type { TicketPriority, TicketStatus } from "./ticketsApi";
 
 export type AiDraftTone = "PROFESSIONAL" | "FRIENDLY" | "CONCISE";
 export type AiDraftConfidence = "LOW" | "MEDIUM" | "HIGH";
+export type AiSearchMode = "semantic" | "keyword";
 
 export type AiDraftSource = {
   chunkId: string;
@@ -10,7 +11,17 @@ export type AiDraftSource = {
   documentName: string;
   chunkIndex: number;
   score: number;
+  citationLabel: string;
+  searchType: AiSearchMode;
+  excerpt: string;
   content: string;
+};
+
+export type AiDraftGrounding = {
+  searchQuery: string;
+  searchMode: AiSearchMode;
+  sourceCount: number;
+  hasKnowledgeContext: boolean;
 };
 
 export type AiDraftTicketSummary = {
@@ -28,6 +39,7 @@ export type GenerateAiDraftResponse = {
     confidence: AiDraftConfidence;
     warnings: string[];
     tone: AiDraftTone;
+    grounding: AiDraftGrounding;
     sources: AiDraftSource[];
     ticket: AiDraftTicketSummary;
   };

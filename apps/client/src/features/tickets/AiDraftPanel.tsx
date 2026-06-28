@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useCreateMessageMutation } from "./messagesApi";
 import {
   type AiDraftConfidence,
+  type AiDraftGrounding,
   type AiDraftSource,
   type AiDraftTone,
   useGenerateAiDraftMutation
@@ -21,6 +22,7 @@ export function AiDraftPanel({ ticketId }: Props) {
   const [confidence, setConfidence] = useState<AiDraftConfidence | "">("");
   const [warnings, setWarnings] = useState<string[]>([]);
   const [sources, setSources] = useState<AiDraftSource[]>([]);
+  const [grounding, setGrounding] = useState<AiDraftGrounding | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [copyMessage, setCopyMessage] = useState("");
 
@@ -44,6 +46,7 @@ export function AiDraftPanel({ ticketId }: Props) {
       setConfidence(response.data.confidence);
       setWarnings(response.data.warnings);
       setSources(response.data.sources);
+      setGrounding(response.data.grounding);
     } catch (error) {
       console.error("Failed to generate AI draft:", error);
       setErrorMessage(
@@ -144,10 +147,32 @@ export function AiDraftPanel({ ticketId }: Props) {
               Provider: {provider || "unknown"}
             </span>
             <span className="siq-badge">Tone: {formatLabel(tone)}</span>
-            <span className="siq-badge">
-              Sources: {sources.length}
-            </span>
+            <span className="siq-badge">Sources: {sources.length}</span>
+            {grounding && (
+              <span className={`siq-badge ${searchModeClass(grounding.searchMode)}`}>
+                {formatLabel(grounding.searchMode)} search
+              </span>
+            )}
           </div>
+
+          {grounding && (
+            <div className="ai-grounding-panel">
+              <div>
+                <strong>Grounding check</strong>
+                <p>
+                  SupportIQ retrieved {grounding.sourceCount} knowledge-base
+                  source{grounding.sourceCount === 1 ? "" : "s"} using{" "}
+                  {formatLabel(grounding.searchMode)} search before generating
+                  this draft.
+                </p>
+              </div>
+
+              <div className="ai-grounding-query">
+                <span>Search query</span>
+                <code>{grounding.searchQuery}</code>
+              </div>
+            </div>
+          )}
 
           {warnings.length > 0 && (
             <div className="ai-warning-box">
@@ -197,9 +222,11 @@ export function AiDraftPanel({ ticketId }: Props) {
         <div className="ai-sources-section">
           <div className="siq-card-header">
             <div>
-              <h3 className="siq-card-title">Sources used</h3>
+              <h3 className="siq-card-title">Grounding sources</h3>
               <p className="dashboard-card-subtitle">
-                Knowledge-base chunks used to ground this draft.
+                Internal citations showing which knowledge-base chunks informed
+                this draft. These are shown to the agent, not automatically sent
+                to the customer.
               </p>
             </div>
           </div>
@@ -207,14 +234,32 @@ export function AiDraftPanel({ ticketId }: Props) {
           <div className="ai-source-list">
             {sources.map((source) => (
               <article key={source.chunkId} className="ai-source-card">
-                <div className="ai-source-card-header">
-                  <strong>{source.documentName}</strong>
-                  <span className="siq-badge">Score {source.score}</span>
+                <div className="ai-source-card-header ai-source-card-header-polished">
+                  <div className="ai-source-title-row">
+                    <span className="ai-source-citation">
+                      {source.citationLabel}
+                    </span>
+                    <div>
+                      <strong>{source.documentName}</strong>
+                      <small>
+                        Chunk #{source.chunkIndex + 1} ·{" "}
+                        {formatLabel(source.searchType)} match
+                      </small>
+                    </div>
+                  </div>
+
+                  <span className="siq-badge">Score {formatScore(source.score)}</span>
                 </div>
 
-                <small>Chunk #{source.chunkIndex + 1}</small>
+                <div className="ai-source-excerpt">
+                  <span>Relevant excerpt</span>
+                  <p>{source.excerpt}</p>
+                </div>
 
-                <p>{source.content}</p>
+                <details className="ai-source-details">
+                  <summary>View full chunk</summary>
+                  <p>{source.content}</p>
+                </details>
               </article>
             ))}
           </div>
@@ -235,6 +280,19 @@ function confidenceClass(confidence: AiDraftConfidence) {
   if (confidence === "HIGH") return "siq-badge-green";
   if (confidence === "MEDIUM") return "siq-badge-orange";
   return "siq-badge-red";
+}
+
+function searchModeClass(searchMode: AiDraftGrounding["searchMode"]) {
+  if (searchMode === "semantic") return "siq-badge-purple";
+  return "siq-badge-slate";
+}
+
+function formatScore(score: number) {
+  if (Number.isInteger(score)) {
+    return score;
+  }
+
+  return score.toFixed(2);
 }
 
 function formatLabel(value: string) {

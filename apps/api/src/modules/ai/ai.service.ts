@@ -7,6 +7,7 @@ import { searchKnowledgeBase } from "../knowledge-base/kb.service.js";
 import type { GenerateAiDraftInput } from "./ai.schema.js";
 
 type Role = "OWNER" | "ADMIN" | "AGENT" | "CUSTOMER";
+type SearchMode = "semantic" | "keyword";
 
 type AiDraftSource = {
   chunkId: string;
@@ -14,6 +15,9 @@ type AiDraftSource = {
   documentName: string;
   chunkIndex: number;
   score: number;
+  citationLabel: string;
+  searchType: SearchMode;
+  excerpt: string;
   content: string;
 };
 
@@ -27,7 +31,7 @@ function buildSearchQuery(ticket: {
   title: string;
   description: string;
 }) {
-  return `${ticket.title} ${ticket.description}`.trim().slice(0, 500);
+  return `${ticket.title} ${ticket.description}`.trim().slice(0, 700);
 }
 
 function trimContent(content: string, maxLength = 1200) {
@@ -38,19 +42,31 @@ function trimContent(content: string, maxLength = 1200) {
   return `${content.slice(0, maxLength).trim()}...`;
 }
 
+function buildExcerpt(content: string, maxLength = 420) {
+  const normalized = content.trim().replace(/\s+/g, " ");
+
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxLength).trim()}...`;
+}
+
 function buildKnowledgeContext(sources: AiDraftSource[]) {
   if (sources.length === 0) {
     return "No relevant knowledge-base context was found.";
   }
 
   return sources
-    .map(
-      (source, index) =>
-        [
-          `Source ${index + 1}: ${source.documentName}`,
-          `Score: ${source.score}`,
-          trimContent(source.content)
-        ].join("\n")
+    .map((source) =>
+      [
+        `[${source.citationLabel}] Document: ${source.documentName}`,
+        `Chunk: ${source.chunkIndex + 1}`,
+        `Search type: ${source.searchType}`,
+        `Relevance score: ${source.score}`,
+        "",
+        trimContent(source.content)
+      ].join("\n")
     )
     .join("\n\n---\n\n");
 }
@@ -74,6 +90,10 @@ function calculateConfidence(sources: AiDraftSource[]) {
 
   const bestScore = Math.max(...sources.map((source) => source.score));
 
+  if (sources.length >= 2 && bestScore >= 70) {
+    return "HIGH" as const;
+  }
+
   if (sources.length >= 3 && bestScore >= 10) {
     return "HIGH" as const;
   }
@@ -89,6 +109,8 @@ function buildWarnings(args: {
   sourceCount: number;
   confidence: "LOW" | "MEDIUM" | "HIGH";
   ticketStatus: string;
+  searchMode: SearchMode;
+  provider: "openai" | "fallback";
 }) {
   const warnings: string[] = [];
 
@@ -104,7 +126,29 @@ function buildWarnings(args: {
     warnings.push("This ticket is already resolved or closed.");
   }
 
+  if (args.searchMode === "keyword") {
+    warnings.push(
+      "Knowledge retrieval used keyword search. Semantic grounding may be unavailable."
+    );
+  }
+
+  if (args.provider === "fallback") {
+    warnings.push(
+      "OpenAI is not configured, so SupportIQ generated a safe fallback draft."
+    );
+  }
+
   return warnings;
+}
+
+function extractActionLines(sources: AiDraftSource[]) {
+  const lines = sources
+    .flatMap((source) => source.content.split("\n"))
+    .map((line) => line.trim())
+    .filter((line) => /^\d+\./.test(line))
+    .slice(0, 4);
+
+  return lines;
 }
 
 function buildFallbackDraft(
@@ -112,8 +156,38 @@ function buildFallbackDraft(
     title: string;
     description: string;
   },
-  tone: GenerateAiDraftInput["tone"]
+  tone: GenerateAiDraftInput["tone"],
+  sources: AiDraftSource[]
 ) {
+  const actionLines = extractActionLines(sources);
+
+  if (actionLines.length > 0) {
+    const intro =
+      tone === "FRIENDLY"
+        ? `Thanks for reaching out about "${ticket.title}". I’m sorry you’re running into this.`
+        : `Thank you for contacting us regarding "${ticket.title}".`;
+
+    const closing =
+      tone === "CONCISE"
+        ? "Please try these steps and let us know if the issue continues."
+        : "Please try these steps and let us know what happens. If the issue continues, we’ll review it further and help you resolve it.";
+
+    return [
+      "Hi,",
+      "",
+      intro,
+      "",
+      "Based on our support guidance, please try the following:",
+      "",
+      ...actionLines.map((line) => `- ${line.replace(/^\d+\.\s*/, "")}`),
+      "",
+      closing,
+      "",
+      "Best regards,",
+      "Support Team"
+    ].join("\n");
+  }
+
   if (tone === "CONCISE") {
     return [
       "Hi,",
@@ -220,24 +294,21 @@ export async function generateAiDraftReply(
     limit: "5"
   });
 
-  const sources: AiDraftSource[] = kbSearch.results.map((result) => ({
+  const searchMode = kbSearch.mode as SearchMode;
+
+  const sources: AiDraftSource[] = kbSearch.results.map((result, index) => ({
     chunkId: result.id,
     documentId: result.documentId,
     documentName: result.document.originalName,
     chunkIndex: result.chunkIndex,
-    score: result.score,
+    score: Number(result.score),
+    citationLabel: `S${index + 1}`,
+    searchType: (result.searchType ?? searchMode) as SearchMode,
+    excerpt: buildExcerpt(result.content),
     content: result.content
   }));
 
   const confidence = calculateConfidence(sources);
-
-  const warnings = buildWarnings({
-    sourceCount: sources.length,
-    confidence,
-    ticketStatus: ticketDetails.status
-  });
-
-  const knowledgeContext = buildKnowledgeContext(sources);
   const toneInstruction = getToneInstruction(input.tone);
   const openai = getOpenAIClient();
 
@@ -245,8 +316,8 @@ export async function generateAiDraftReply(
   let provider: "openai" | "fallback";
 
   if (!openai) {
-    draft = buildFallbackDraft(ticketDetails, input.tone);
     provider = "fallback";
+    draft = buildFallbackDraft(ticketDetails, input.tone, sources);
   } else {
     const recentMessages = ticketDetails.messages
       .map((message) => `${message.sender.name}: ${message.body}`)
@@ -264,6 +335,8 @@ export async function generateAiDraftReply(
             "Do not invent policies, refunds, timelines, discounts, or technical facts.",
             "Use the knowledge-base context only when relevant.",
             "If the answer is uncertain, ask for more information instead of making claims.",
+            "The source labels like [S1] are internal citations for the support agent.",
+            "Do not include source labels in the final customer-facing reply.",
             toneInstruction
           ].join(" ")
         },
@@ -279,10 +352,10 @@ export async function generateAiDraftReply(
             "Recent conversation:",
             recentMessages || "No messages yet.",
             "",
-            "Knowledge-base context:",
-            knowledgeContext,
+            "Knowledge-base context with internal source labels:",
+            buildKnowledgeContext(sources),
             "",
-            "Write only the final customer-facing reply. Do not mention internal scores or source numbers."
+            "Write only the final customer-facing reply. Do not mention internal scores or source labels."
           ].join("\n")
         }
       ]
@@ -290,10 +363,18 @@ export async function generateAiDraftReply(
 
     draft =
       completion.choices[0]?.message?.content?.trim() ??
-      buildFallbackDraft(ticketDetails, input.tone);
+      buildFallbackDraft(ticketDetails, input.tone, sources);
 
     provider = "openai";
   }
+
+  const warnings = buildWarnings({
+    sourceCount: sources.length,
+    confidence,
+    ticketStatus: ticketDetails.status,
+    searchMode,
+    provider
+  });
 
   await prisma.activityLog.create({
     data: {
@@ -306,9 +387,19 @@ export async function generateAiDraftReply(
         provider,
         sourceCount: sources.length,
         searchQuery,
+        searchMode,
         confidence,
         warnings,
-        tone: input.tone
+        tone: input.tone,
+        sources: sources.map((source) => ({
+          citationLabel: source.citationLabel,
+          documentId: source.documentId,
+          documentName: source.documentName,
+          chunkId: source.chunkId,
+          chunkIndex: source.chunkIndex,
+          score: source.score,
+          searchType: source.searchType
+        }))
       }
     }
   });
@@ -319,6 +410,12 @@ export async function generateAiDraftReply(
     confidence,
     warnings,
     tone: input.tone,
+    grounding: {
+      searchQuery,
+      searchMode,
+      sourceCount: sources.length,
+      hasKnowledgeContext: sources.length > 0
+    },
     sources,
     ticket: {
       id: ticketDetails.id,
