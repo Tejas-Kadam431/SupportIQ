@@ -18,6 +18,13 @@ const envSchema = z.object({
   JWT_ACCESS_EXPIRES_IN: z.string().default("15m"),
   JWT_REFRESH_EXPIRES_IN: z.string().default("7d"),
 
+  GEMINI_API_KEY: optionalNonEmptyString,
+
+  GEMINI_MODEL: z.preprocess(
+    (value) => (value === "" || value === undefined ? "gemini-2.5-flash" : value),
+    z.string()
+  ),
+
   OPENAI_API_KEY: optionalNonEmptyString,
 
   OPENAI_MODEL: z.preprocess(

@@ -1,3 +1,4 @@
+import { GoogleGenAI } from "@google/genai";
 import OpenAI from "openai";
 import { prisma } from "../../config/prisma.js";
 import { env } from "../../config/env.js";
@@ -9,6 +10,7 @@ import { isDemoReadonlyUserId } from "../../common/middleware/demoReadOnly.middl
 
 type Role = "OWNER" | "ADMIN" | "AGENT" | "CUSTOMER";
 type SearchMode = "semantic" | "keyword";
+type AiProvider = "gemini" | "openai" | "fallback";
 
 type AiDraftSource = {
   chunkId: string;
@@ -110,8 +112,8 @@ function buildWarnings(args: {
   sourceCount: number;
   confidence: "LOW" | "MEDIUM" | "HIGH";
   ticketStatus: string;
-  searchMode: SearchMode;
-  provider: "openai" | "fallback";
+  provider: AiProvider;
+  fallbackReason?: string;
 }) {
   const warnings: string[] = [];
 
@@ -127,15 +129,10 @@ function buildWarnings(args: {
     warnings.push("This ticket is already resolved or closed.");
   }
 
-  if (args.searchMode === "keyword") {
-    warnings.push(
-      "Knowledge retrieval used keyword search. Semantic grounding may be unavailable."
-    );
-  }
-
   if (args.provider === "fallback") {
     warnings.push(
-      "OpenAI is not configured, so SupportIQ generated a safe fallback draft."
+      args.fallbackReason ??
+        "No external AI provider is configured, so SupportIQ generated a safe fallback draft."
     );
   }
 
@@ -237,6 +234,117 @@ function getOpenAIClient() {
   });
 }
 
+function getGeminiClient() {
+  if (!env.GEMINI_API_KEY) {
+    return null;
+  }
+
+  return new GoogleGenAI({
+    apiKey: env.GEMINI_API_KEY
+  });
+}
+
+function buildAiPrompt(args: {
+  ticketDetails: {
+    title: string;
+    description: string;
+    status: string;
+    priority: string;
+    customer: {
+      name: string;
+    };
+  };
+  recentMessages: string;
+  sources: AiDraftSource[];
+  toneInstruction: string;
+}) {
+  return [
+    "You are a careful customer support agent.",
+    "Write a helpful, accurate customer-facing support reply.",
+    "Do not invent policies, refunds, timelines, discounts, or technical facts.",
+    "Use the knowledge-base context only when relevant.",
+    "If the answer is uncertain, ask for more information instead of making claims.",
+    "The source labels like [S1] are internal citations for the support agent.",
+    "Do not include source labels in the final customer-facing reply.",
+    args.toneInstruction,
+    "",
+    `Customer name: ${args.ticketDetails.customer.name}`,
+    `Ticket title: ${args.ticketDetails.title}`,
+    `Ticket description: ${args.ticketDetails.description}`,
+    `Ticket status: ${args.ticketDetails.status}`,
+    `Ticket priority: ${args.ticketDetails.priority}`,
+    "",
+    "Recent conversation:",
+    args.recentMessages || "No messages yet.",
+    "",
+    "Knowledge-base context with internal source labels:",
+    buildKnowledgeContext(args.sources),
+    "",
+    "Write only the final customer-facing reply. Do not mention internal scores or source labels."
+  ].join("\n");
+}
+
+async function generateWithGemini(prompt: string) {
+  const gemini = getGeminiClient();
+
+  if (!gemini) {
+    return null;
+  }
+
+  const response = await gemini.models.generateContent({
+    model: env.GEMINI_MODEL,
+    contents: prompt
+  });
+
+  const text = response.text?.trim();
+
+  if (!text) {
+    throw new Error("Gemini returned an empty response");
+  }
+
+  return text;
+}
+
+async function generateWithOpenAI(prompt: string, toneInstruction: string) {
+  const openai = getOpenAIClient();
+
+  if (!openai) {
+    return null;
+  }
+
+  const completion = await openai.chat.completions.create({
+    model: env.OPENAI_MODEL,
+    temperature: 0.25,
+    messages: [
+      {
+        role: "system",
+        content: [
+          "You are a careful customer support agent.",
+          "Write helpful, accurate replies.",
+          "Do not invent policies, refunds, timelines, discounts, or technical facts.",
+          "Use the knowledge-base context only when relevant.",
+          "If the answer is uncertain, ask for more information instead of making claims.",
+          "The source labels like [S1] are internal citations for the support agent.",
+          "Do not include source labels in the final customer-facing reply.",
+          toneInstruction
+        ].join(" ")
+      },
+      {
+        role: "user",
+        content: prompt
+      }
+    ]
+  });
+
+  const text = completion.choices[0]?.message?.content?.trim();
+
+  if (!text) {
+    throw new Error("OpenAI returned an empty response");
+  }
+
+  return text;
+}
+
 export async function generateAiDraftReply(
   userId: string,
   ticketId: string,
@@ -311,70 +419,66 @@ export async function generateAiDraftReply(
 
   const confidence = calculateConfidence(sources);
   const toneInstruction = getToneInstruction(input.tone);
-  const openai = getOpenAIClient();
 
-  let draft: string;
-  let provider: "openai" | "fallback";
+  const recentMessages = ticketDetails.messages
+    .map((message) => `${message.sender.name}: ${message.body}`)
+    .join("\n");
 
-  if (!openai) {
-    provider = "fallback";
+  const prompt = buildAiPrompt({
+    ticketDetails,
+    recentMessages,
+    sources,
+    toneInstruction
+  });
+
+  let draft = "";
+  let provider: AiProvider = "fallback";
+  let fallbackReason: string | undefined;
+
+  try {
+    const geminiDraft = await generateWithGemini(prompt);
+
+    if (geminiDraft) {
+      draft = geminiDraft;
+      provider = "gemini";
+    }
+  } catch (error) {
+    console.error("Gemini draft generation failed:", error);
+    fallbackReason =
+      "Gemini generation failed, so SupportIQ generated a safe fallback draft.";
+  }
+
+  if (!draft) {
+    try {
+      const openAiDraft = await generateWithOpenAI(prompt, toneInstruction);
+
+      if (openAiDraft) {
+        draft = openAiDraft;
+        provider = "openai";
+        fallbackReason = undefined;
+      }
+    } catch (error) {
+      console.error("OpenAI draft generation failed:", error);
+      fallbackReason =
+        "External AI generation failed, so SupportIQ generated a safe fallback draft.";
+    }
+  }
+
+  if (!draft) {
     draft = buildFallbackDraft(ticketDetails, input.tone, sources);
-  } else {
-    const recentMessages = ticketDetails.messages
-      .map((message) => `${message.sender.name}: ${message.body}`)
-      .join("\n");
 
-    const completion = await openai.chat.completions.create({
-      model: env.OPENAI_MODEL,
-      temperature: 0.25,
-      messages: [
-        {
-          role: "system",
-          content: [
-            "You are a careful customer support agent.",
-            "Write helpful, accurate replies.",
-            "Do not invent policies, refunds, timelines, discounts, or technical facts.",
-            "Use the knowledge-base context only when relevant.",
-            "If the answer is uncertain, ask for more information instead of making claims.",
-            "The source labels like [S1] are internal citations for the support agent.",
-            "Do not include source labels in the final customer-facing reply.",
-            toneInstruction
-          ].join(" ")
-        },
-        {
-          role: "user",
-          content: [
-            `Customer name: ${ticketDetails.customer.name}`,
-            `Ticket title: ${ticketDetails.title}`,
-            `Ticket description: ${ticketDetails.description}`,
-            `Ticket status: ${ticketDetails.status}`,
-            `Ticket priority: ${ticketDetails.priority}`,
-            "",
-            "Recent conversation:",
-            recentMessages || "No messages yet.",
-            "",
-            "Knowledge-base context with internal source labels:",
-            buildKnowledgeContext(sources),
-            "",
-            "Write only the final customer-facing reply. Do not mention internal scores or source labels."
-          ].join("\n")
-        }
-      ]
-    });
-
-    draft =
-      completion.choices[0]?.message?.content?.trim() ??
-      buildFallbackDraft(ticketDetails, input.tone, sources);
-
-    provider = "openai";
+    if (!fallbackReason) {
+      fallbackReason =
+        "No external AI provider is configured, so SupportIQ generated a safe fallback draft.";
+    }
   }
 
   const warnings = buildWarnings({
     sourceCount: sources.length,
     confidence,
     ticketStatus: ticketDetails.status,
-    searchMode,
-    provider
+    provider,
+    fallbackReason
   });
 
   const shouldWriteActivity = !(await isDemoReadonlyUserId(userId));

@@ -4,6 +4,7 @@ import type { TicketPriority, TicketStatus } from "./ticketsApi";
 export type AiDraftTone = "PROFESSIONAL" | "FRIENDLY" | "CONCISE";
 export type AiDraftConfidence = "LOW" | "MEDIUM" | "HIGH";
 export type AiSearchMode = "semantic" | "keyword";
+export type AiProvider = "gemini" | "openai" | "fallback";
 
 export type AiDraftSource = {
   chunkId: string;
@@ -35,7 +36,7 @@ export type GenerateAiDraftResponse = {
   message: string;
   data: {
     draft: string;
-    provider: "openai" | "fallback";
+    provider: AiProvider;
     confidence: AiDraftConfidence;
     warnings: string[];
     tone: AiDraftTone;

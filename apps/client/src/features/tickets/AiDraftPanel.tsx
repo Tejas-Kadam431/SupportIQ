@@ -5,6 +5,7 @@ import {
   type AiDraftGrounding,
   type AiDraftSource,
   type AiDraftTone,
+  type AiProvider,
   useGenerateAiDraftMutation
 } from "./aiApi";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
@@ -19,7 +20,7 @@ const tones: AiDraftTone[] = ["PROFESSIONAL", "FRIENDLY", "CONCISE"];
 export function AiDraftPanel({ ticketId }: Props) {
   const [tone, setTone] = useState<AiDraftTone>("PROFESSIONAL");
   const [draft, setDraft] = useState("");
-  const [provider, setProvider] = useState<"openai" | "fallback" | "">("");
+  const [provider, setProvider] = useState<AiProvider | "">("");
   const [confidence, setConfidence] = useState<AiDraftConfidence | "">("");
   const [warnings, setWarnings] = useState<string[]>([]);
   const [sources, setSources] = useState<AiDraftSource[]>([]);
