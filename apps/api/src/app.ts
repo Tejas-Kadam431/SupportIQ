@@ -14,6 +14,7 @@ import { kbRoutes } from "./modules/knowledge-base/kb.routes.js";
 import { aiRoutes } from "./modules/ai/ai.routes.js";
 import { activityRoutes } from "./modules/activity/activity.routes.js";
 import { dashboardRoutes } from "./modules/dashboard/dashboard.routes.js";
+import { healthRoutes } from "./modules/health/health.routes.js";
 
 export const app = express();
 
@@ -61,12 +62,7 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(morgan("dev"));
 
-app.get("/health", (_req, res) => {
-  res.status(200).json({
-    status: "ok",
-    service: "supportiq-api"
-  });
-});
+app.use('/health',healthRoutes);
 
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/organizations", orgRoutes);

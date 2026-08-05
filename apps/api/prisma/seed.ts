@@ -1,4 +1,5 @@
 import { PrismaClient, Role } from "@prisma/client";
+import { hashPassword } from "../src/common/utils/password.js";
 
 const prisma = new PrismaClient();
 
@@ -8,11 +9,13 @@ async function main() {
   await prisma.refreshToken.deleteMany();
   await prisma.user.deleteMany();
 
+  const ownerPasswordHash = await hashPassword("password123");
+
   const owner = await prisma.user.create({
     data: {
       name: "Demo Owner",
-      email: "owner@supportiq.dev",
-      passwordHash: "hashed_password_placeholder"
+      email: "demo.owner@supportiq.app",
+      passwordHash: ownerPasswordHash
     }
   });
 
@@ -20,7 +23,7 @@ async function main() {
     data: {
       name: "Demo Agent",
       email: "agent@supportiq.dev",
-      passwordHash: "hashed_password_placeholder"
+      passwordHash: ownerPasswordHash
     }
   });
 
@@ -28,7 +31,7 @@ async function main() {
     data: {
       name: "Demo Customer",
       email: "customer@supportiq.dev",
-      passwordHash: "hashed_password_placeholder"
+      passwordHash: ownerPasswordHash
     }
   });
 
