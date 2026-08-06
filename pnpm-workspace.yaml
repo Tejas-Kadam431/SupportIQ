@@ -2,11 +2,4 @@ packages:
   - "apps/*"
   - "packages/*"
 
-onlyBuiltDependencies:
-  - "@google/genai"
-  - "@prisma/client"
-  - "@prisma/engines"
-  - esbuild
-  - msgpackr-extract
-  - protobufjs
-  - unrs-resolver
+dangerouslyAllowAllBuilds: true
