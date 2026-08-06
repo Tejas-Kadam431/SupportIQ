@@ -18,6 +18,8 @@ import { healthRoutes } from "./modules/health/health.routes.js";
 
 export const app = express();
 
+app.set("trust proxy", 1);
+
 function getAllowedOrigins() {
   return (process.env.CLIENT_URL ?? "http://localhost:5173")
     .split(",")
