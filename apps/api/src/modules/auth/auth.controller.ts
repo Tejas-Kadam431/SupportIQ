@@ -44,7 +44,7 @@ function clearRefreshTokenCookie(res: Response) {
 }
 
 function getRefreshTokenFromRequest(req: Request) {
-  return req.cookies?.[REFRESH_COOKIE_NAME] || req.body.refreshToken;
+  return req.cookies?.[REFRESH_COOKIE_NAME];
 }
 
 export async function register(req: Request, res: Response) {
@@ -54,7 +54,10 @@ export async function register(req: Request, res: Response) {
 
   return res.status(201).json({
     message: "Registered successfully",
-    data: result
+    data: {
+      user: result.user,
+      accessToken: result.accessToken
+    }
   });
 }
 
@@ -65,10 +68,12 @@ export async function login(req: Request, res: Response) {
 
   return res.status(200).json({
     message: "Logged in successfully",
-    data: result
+    data: {
+      user: result.user,
+      accessToken: result.accessToken
+    }
   });
 }
-
 export async function refresh(req: Request, res: Response) {
   const refreshToken = getRefreshTokenFromRequest(req);
 
@@ -82,7 +87,10 @@ export async function refresh(req: Request, res: Response) {
 
   return res.status(200).json({
     message: "Token refreshed successfully",
-    data: result
+    data: {
+      user: result.user,
+      accessToken: result.accessToken
+    }
   });
 }
 

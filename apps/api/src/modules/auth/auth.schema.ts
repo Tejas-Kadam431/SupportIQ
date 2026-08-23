@@ -15,16 +15,14 @@ export const loginSchema = z.object({
   })
 });
 
+const emptyBodySchema = z.object({}).strict();
+
 export const refreshSchema = z.object({
-  body: z.object({
-    refreshToken: z.string().optional()
-  })
+  body: emptyBodySchema
 });
 
 export const logoutSchema = z.object({
-  body: z.object({
-    refreshToken: z.string().optional()
-  })
+  body: emptyBodySchema
 });
 
 export type RegisterInput = z.infer<typeof registerSchema>["body"];
