@@ -332,9 +332,7 @@ DATABASE_URL=postgresql://postgres:postgres@localhost:5432/supportiq
 REDIS_URL=redis://localhost:6379
 
 JWT_ACCESS_SECRET=your_access_secret
-JWT_REFRESH_SECRET=your_refresh_secret
 JWT_ACCESS_EXPIRES_IN=15m
-JWT_REFRESH_EXPIRES_IN=7d
 
 CLIENT_URL=http://localhost:5173
 
