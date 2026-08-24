@@ -1,7 +1,19 @@
 import request from "supertest";
 import { app } from "../src/app.js";
 import { prisma } from "../src/config/prisma.js";
+function extractCookie(
+  setCookieHeader: string | string[] | undefined
+) {
+  if (!setCookieHeader) {
+    throw new Error("Expected Set-Cookie header");
+  }
 
+  const firstCookie = Array.isArray(setCookieHeader)
+    ? setCookieHeader[0]
+    : setCookieHeader;
+
+  return firstCookie.split(";")[0];
+}
 describe("Auth API", () => {
   const testEmail = `auth-${Date.now()}@supportiq.test`;
   const password = "password123";
@@ -9,6 +21,7 @@ describe("Auth API", () => {
   const agent = request.agent(app);
 
   let accessToken: string;
+  let refreshCookie: string;
 
   afterAll(async () => {
     await prisma.user.deleteMany({
@@ -76,6 +89,7 @@ describe("Auth API", () => {
     expect(response.body.data.refreshToken).toBeUndefined();
 
     expect(response.headers["set-cookie"]).toBeDefined();
+    refreshCookie = extractCookie(response.headers["set-cookie"]);
 
     accessToken = response.body.data.accessToken;
   });
@@ -104,16 +118,51 @@ describe("Auth API", () => {
     expect(response.body.data.refreshToken).toBeUndefined();
 
     expect(response.headers["set-cookie"]).toBeDefined();
+    refreshCookie = extractCookie(response.headers["set-cookie"]);
 
     accessToken = response.body.data.accessToken;
   });
+it("allows only one concurrent refresh using the same refresh token", async () => {
+  const [firstResponse, secondResponse] = await Promise.all([
+    request(app)
+      .post("/api/v1/auth/refresh")
+      .set("Cookie", refreshCookie)
+      .send({}),
+
+    request(app)
+      .post("/api/v1/auth/refresh")
+      .set("Cookie", refreshCookie)
+      .send({})
+  ]);
+
+  const statuses = [
+    firstResponse.status,
+    secondResponse.status
+  ].sort();
+
+  expect(statuses).toEqual([200, 401]);
+
+  const successfulResponse =
+    firstResponse.status === 200
+      ? firstResponse
+      : secondResponse;
+
+  refreshCookie = extractCookie(
+    successfulResponse.headers["set-cookie"]
+  );
+
+  accessToken = successfulResponse.body.data.accessToken;
+});
 
   it("logs out successfully using the refresh cookie", async () => {
-    const response = await agent
+    const response = await request(app)
       .post("/api/v1/auth/logout")
+      .set("Cookie", refreshCookie)
       .send({})
       .expect(200);
 
-    expect(response.body.message).toBe("Logged out successfully");
+      expect(response.body.message).toBe(
+    "Logged out successfully"
+  );
   });
 });

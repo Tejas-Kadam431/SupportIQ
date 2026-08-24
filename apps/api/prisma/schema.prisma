@@ -45,6 +45,23 @@ enum ActivityType {
   AI_REPLY_GENERATED
   DOCUMENT_UPLOADED
 }
+enum CopilotDisposition {
+  ACCEPTED
+  EDITED
+  REJECTED
+}
+
+enum CopilotFailureReason {
+  WRONG_KNOWLEDGE
+  MISSING_CUSTOMER_CONTEXT
+  INSUFFICIENT_KB
+  IRRELEVANT_EVIDENCE
+  INCORRECT_RECOMMENDATION
+  INCOMPLETE_RESPONSE
+  BAD_TONE
+  UNSUPPORTED_CLAIM
+  OTHER
+}
 
 model User {
   id           String  @id @default(cuid())
@@ -66,6 +83,8 @@ model User {
   internalNotes              InternalNote[]      @relation("InternalNoteAuthor")
   activityLogs               ActivityLog[]       @relation("ActivityActor")
   uploadedKnowledgeDocuments KnowledgeDocument[] @relation("KnowledgeDocumentUploader")
+  copilotRuns                CopilotRun[]        @relation("CopilotRunTrigger")
+  copilotEvaluations         CopilotEvaluation[] @relation("CopilotEvaluationActor")
 
   @@index([email])
 }
@@ -101,6 +120,7 @@ model Organization {
   activityLogs       ActivityLog[]
   knowledgeDocuments KnowledgeDocument[]
   knowledgeChunks    KnowledgeChunk[]
+  copilotRuns CopilotRun[]
 
   @@index([ownerId])
   @@index([slug])
@@ -149,6 +169,7 @@ model Ticket {
   messages      TicketMessage[]
   internalNotes InternalNote[]
   activityLogs  ActivityLog[]
+  copilotRuns CopilotRun[]
 
   @@index([organizationId])
   @@index([customerId])
@@ -261,5 +282,64 @@ model KnowledgeChunk {
   @@unique([documentId, chunkIndex])
   @@index([documentId])
   @@index([organizationId])
+  @@index([createdAt])
+}
+
+model CopilotRun {
+  id             String  @id @default(cuid())
+  organizationId String
+  ticketId       String
+  triggeredById  String?
+
+  provider   String
+  confidence String
+  tone       String
+
+  topic              String
+  issueSummary       String
+  missingInformation Json
+  recommendedAction  String
+  suggestedReply     String?
+  abstained          Boolean @default(false)
+
+  searchQuery String
+  searchMode  String
+  sourceCount Int
+  sources     Json
+  warnings    Json
+
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  ticket       Ticket       @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  triggeredBy  User?        @relation("CopilotRunTrigger", fields: [triggeredById], references: [id], onDelete: SetNull)
+
+  evaluation CopilotEvaluation?
+
+  @@index([organizationId])
+  @@index([ticketId])
+  @@index([triggeredById])
+  @@index([topic])
+  @@index([createdAt])
+}
+
+model CopilotEvaluation {
+  id           String @id @default(cuid())
+  copilotRunId String @unique
+  evaluatorId  String?
+
+  disposition CopilotDisposition
+  reason      CopilotFailureReason?
+  finalMessage String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  copilotRun CopilotRun @relation(fields: [copilotRunId], references: [id], onDelete: Cascade)
+  evaluator  User?      @relation("CopilotEvaluationActor", fields: [evaluatorId], references: [id], onDelete: SetNull)
+
+  @@index([evaluatorId])
+  @@index([disposition])
+  @@index([reason])
   @@index([createdAt])
 }

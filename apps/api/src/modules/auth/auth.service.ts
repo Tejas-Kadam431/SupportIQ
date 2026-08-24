@@ -101,13 +101,14 @@ export async function loginUser(input: LoginInput) {
 
 export async function refreshAccessToken(refreshToken: string) {
   const tokenHash = hashRefreshToken(refreshToken);
+  const now = new Date();
 
   const storedToken = await prisma.refreshToken.findFirst({
     where: {
       tokenHash,
       revokedAt: null,
       expiresAt: {
-        gt: new Date()
+        gt: now
       }
     },
     include: {
@@ -119,17 +120,38 @@ export async function refreshAccessToken(refreshToken: string) {
     throw new AppError("Invalid or expired refresh token", 401);
   }
 
-  await prisma.refreshToken.update({
-    where: {
-      id: storedToken.id
-    },
-    data: {
-      revokedAt: new Date()
+  const newRefreshToken = generateRefreshToken();
+  const newRefreshTokenHash = hashRefreshToken(newRefreshToken);
+  const newRefreshTokenExpiresAt = getRefreshTokenExpiryDate();
+
+  await prisma.$transaction(async (tx) => {
+    const consumeResult = await tx.refreshToken.updateMany({
+      where: {
+        id: storedToken.id,
+        revokedAt: null,
+        expiresAt: {
+          gt: now
+        }
+      },
+      data: {
+        revokedAt: now
+      }
+    });
+
+    if (consumeResult.count !== 1) {
+      throw new AppError("Invalid or expired refresh token", 401);
     }
+
+    await tx.refreshToken.create({
+      data: {
+        userId: storedToken.userId,
+        tokenHash: newRefreshTokenHash,
+        expiresAt: newRefreshTokenExpiresAt
+      }
+    });
   });
 
   const newAccessToken = signAccessToken(storedToken.userId);
-  const newRefreshToken = await createRefreshToken(storedToken.userId);
 
   return {
     user: sanitizeUser(storedToken.user),

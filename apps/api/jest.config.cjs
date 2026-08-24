@@ -5,7 +5,7 @@ module.exports = {
   "**/__tests__/**/*.test.ts",
   "**/tests/**/*.test.ts"
   ],
-  setupFilesAfterEnv: ["<rootDir>/src/__tests__/jest.setup.ts"],
+  setupFilesAfterEnv: ["<rootDir>/tests/jest.setup.ts"],
   extensionsToTreatAsEsm: [".ts"],
   globals: {
     "ts-jest": {

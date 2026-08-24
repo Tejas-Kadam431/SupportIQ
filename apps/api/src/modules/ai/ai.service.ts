@@ -5,7 +5,10 @@ import { env } from "../../config/env.js";
 import { AppError } from "../../common/errors/AppError.js";
 import { getTicketOrThrow } from "../tickets/ticket.service.js";
 import { searchKnowledgeBase } from "../knowledge-base/kb.service.js";
-import type { GenerateAiDraftInput } from "./ai.schema.js";
+import type {
+  EvaluateCopilotInput,
+  GenerateAiDraftInput
+} from "./ai.schema.js";
 import { isDemoReadonlyUserId } from "../../common/middleware/demoReadOnly.middleware.js";
 
 type Role = "OWNER" | "ADMIN" | "AGENT" | "CUSTOMER";
@@ -137,6 +140,47 @@ function buildWarnings(args: {
   }
 
   return warnings;
+}
+function buildCopilotInsights(
+  ticket: {
+    title: string;
+    description: string;
+  },
+  confidence: "LOW" | "MEDIUM" | "HIGH",
+  sources: AiDraftSource[]
+) {
+  const abstained = sources.length === 0 || confidence === "LOW";
+
+  const missingInformation: string[] = [];
+
+  if (sources.length === 0) {
+    missingInformation.push(
+      "Verified knowledge-base evidence for this issue."
+    );
+  } else if (confidence === "LOW") {
+    missingInformation.push(
+      "Stronger or more directly relevant knowledge-base evidence."
+    );
+  }
+
+  const issueSummary = [
+    ticket.title,
+    trimContent(ticket.description, 320)
+  ]
+    .filter(Boolean)
+    .join(": ");
+
+  const recommendedAction = abstained
+    ? "Ask for any missing customer context and verify the relevant knowledge-base guidance before sending a definitive answer."
+    : "Review the retrieved evidence and suggested reply, edit it if necessary, then send it after confirming it matches the customer context.";
+
+  return {
+    topic: ticket.title.trim().slice(0, 100),
+    issueSummary,
+    missingInformation,
+    recommendedAction,
+    abstained
+  };
 }
 
 function extractActionLines(sources: AiDraftSource[]) {
@@ -480,10 +524,56 @@ export async function generateAiDraftReply(
     provider,
     fallbackReason
   });
+    const copilot = buildCopilotInsights(
+    ticketDetails,
+    confidence,
+    sources
+  );
 
+  const suggestedReply = copilot.abstained
+    ? null
+    : draft;
   const shouldWriteActivity = !(await isDemoReadonlyUserId(userId));
+  let runId: string | null = null;
 
   if (shouldWriteActivity) {
+    const run = await prisma.copilotRun.create({
+    data: {
+      organizationId: ticketDetails.organizationId,
+      ticketId: ticketDetails.id,
+      triggeredById: userId,
+
+      provider,
+      confidence,
+      tone: input.tone,
+
+      topic: copilot.topic,
+      issueSummary: copilot.issueSummary,
+      missingInformation: copilot.missingInformation,
+      recommendedAction: copilot.recommendedAction,
+      suggestedReply,
+      abstained: copilot.abstained,
+
+      searchQuery,
+      searchMode,
+      sourceCount: sources.length,
+
+      sources: sources.map((source) => ({
+        citationLabel: source.citationLabel,
+        documentId: source.documentId,
+        documentName: source.documentName,
+        chunkId: source.chunkId,
+        chunkIndex: source.chunkIndex,
+        score: source.score,
+        searchType: source.searchType,
+        excerpt: source.excerpt
+      })),
+
+      warnings
+    }
+  });
+
+  runId = run.id;
     await prisma.activityLog.create({
       data: {
         organizationId: ticketDetails.organizationId,
@@ -514,18 +604,33 @@ export async function generateAiDraftReply(
   }
 
   return {
-    draft,
+    runId,
+
+    topic: copilot.topic,
+    issueSummary: copilot.issueSummary,
+    missingInformation: copilot.missingInformation,
+    recommendedAction: copilot.recommendedAction,
+
+    suggestedReply,
+    abstained: copilot.abstained,
+
+    // Keep this temporarily for backward compatibility.
+    draft: suggestedReply ?? "",
+
     provider,
     confidence,
     warnings,
     tone: input.tone,
+
     grounding: {
       searchQuery,
       searchMode,
       sourceCount: sources.length,
       hasKnowledgeContext: sources.length > 0
     },
+
     sources,
+
     ticket: {
       id: ticketDetails.id,
       title: ticketDetails.title,
@@ -533,4 +638,60 @@ export async function generateAiDraftReply(
       priority: ticketDetails.priority
     }
   };
+}
+export async function evaluateCopilotRun(
+  userId: string,
+  ticketId: string,
+  runId: string,
+  input: EvaluateCopilotInput
+) {
+  const { ticket, membership } = await getTicketOrThrow(
+    userId,
+    ticketId
+  );
+
+  const role = membership.role as Role;
+
+  assertStaffRole(role);
+
+  const run = await prisma.copilotRun.findFirst({
+    where: {
+      id: runId,
+      ticketId: ticket.id,
+      organizationId: ticket.organizationId
+    }
+  });
+
+  if (!run) {
+    throw new AppError("Copilot run not found", 404);
+  }
+
+  const finalMessage =
+    input.finalMessage?.trim() || null;
+
+  const reason =
+    input.disposition === "ACCEPTED"
+      ? null
+      : input.reason ?? null;
+
+  return prisma.copilotEvaluation.upsert({
+    where: {
+      copilotRunId: run.id
+    },
+
+    update: {
+      evaluatorId: userId,
+      disposition: input.disposition,
+      reason,
+      finalMessage
+    },
+
+    create: {
+      copilotRunId: run.id,
+      evaluatorId: userId,
+      disposition: input.disposition,
+      reason,
+      finalMessage
+    }
+  });
 }
