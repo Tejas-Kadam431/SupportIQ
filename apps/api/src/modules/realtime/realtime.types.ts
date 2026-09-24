@@ -37,5 +37,5 @@ export type InterServerEvents = Record<string, never>;
 
 export type SocketData = {
   userId: string;
-  email: string;
+  expiresAt: number;
 };

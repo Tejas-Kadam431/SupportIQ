@@ -1,6 +1,6 @@
 const dotenv = require("dotenv");
 
-dotenv.config({ path: ".env.test", override: true, quiet: true });
-dotenv.config({ path: ".env", quiet: true });
+// Test-specific configuration only; never fall back to a development database.
+dotenv.config({ path: ".env.test", override: false, quiet: true });
 
 process.env.NODE_ENV = "test";

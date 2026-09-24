@@ -1,167 +1,134 @@
 import type { Server as HttpServer } from "http";
-import { Server } from "socket.io";
-import jwt from "jsonwebtoken";
-import { prisma } from "../../config/prisma.js";
-import { env } from "../../config/env.js";
+import { Server, type Socket } from "socket.io";
+import { verifyAccessToken } from "../../common/utils/jwt.js";
+import { isAllowedOrigin } from "../../config/origins.js";
+import { canUserAccessTicket, isTicketId } from "./realtime.authorization.js";
+import { logRealtimeFailure } from "./realtime.logging.js";
 import type {
-  ClientToServerEvents,
-  InterServerEvents,
-  ServerToClientEvents,
-  SocketData
+  ClientToServerEvents, InterServerEvents, ServerToClientEvents, SocketData
 } from "./realtime.types.js";
 
-type AppSocketServer = Server<
-  ClientToServerEvents,
-  ServerToClientEvents,
-  InterServerEvents,
-  SocketData
->;
-
+type AppSocketServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
+type AppSocket = Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 let io: AppSocketServer | null = null;
+const ACCESS_DENIED = "Ticket access denied";
+const MAX_TIMER_DELAY = 2_147_483_647;
 
 function ticketRoom(ticketId: string) {
   return `ticket:${ticketId}`;
 }
 
 function extractToken(authHeader?: string) {
-  if (!authHeader) return null;
+  return authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : authHeader;
+}
 
-  if (authHeader.startsWith("Bearer ")) {
-    return authHeader.slice("Bearer ".length);
+function sessionIsLive(socket: AppSocket) {
+  if (!socket.connected) return false;
+  if (!Number.isFinite(socket.data.expiresAt) || Date.now() >= socket.data.expiresAt) {
+    socket.disconnect(true);
+    return false;
   }
+  return true;
+}
 
-  return authHeader;
+function enforceExpiry(socket: AppSocket) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const schedule = () => {
+    if (!sessionIsLive(socket)) return;
+    // Long configured lifetimes must not overflow Node's timer limit.
+    timer = setTimeout(schedule, Math.max(1, Math.min(
+      socket.data.expiresAt - Date.now(), MAX_TIMER_DELAY
+    )));
+    timer.unref();
+  };
+  socket.once("disconnect", () => clearTimeout(timer));
+  schedule();
 }
 
 export function initRealtimeServer(httpServer: HttpServer) {
-  io = new Server<
-    ClientToServerEvents,
-    ServerToClientEvents,
-    InterServerEvents,
-    SocketData
-  >(httpServer, {
-    cors: {
-      origin: process.env.CLIENT_URL ?? "http://localhost:5173",
-      credentials: true
+  const server = new Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>(
+    httpServer,
+    {
+      cors: {
+        origin: (origin, callback) => callback(null, isAllowedOrigin(origin)),
+        credentials: true
+      },
+      // CORS alone does not restrict native WebSocket handshakes.
+      allowRequest: (request, callback) => {
+        const allowed = isAllowedOrigin(request.headers.origin);
+        callback(allowed ? null : "Origin not allowed", allowed);
+      }
     }
-  });
-
-  io.use(async (socket, next) => {
+  );
+  io = server;
+  server.use((socket, next) => {
     try {
-      const tokenFromAuth = socket.handshake.auth?.token;
-      const tokenFromHeader = extractToken(
-        socket.handshake.headers.authorization
-      );
-
-      const token =
-        typeof tokenFromAuth === "string" ? tokenFromAuth : tokenFromHeader;
-
-      if (!token) {
-        return next(new Error("Missing socket auth token"));
-      }
-
-      const decoded = jwt.verify(token, env.JWT_ACCESS_SECRET) as {
-        sub?: string;
-        email?: string;
-      };
-
-      if (!decoded.sub) {
-        return next(new Error("Invalid socket auth token"));
-      }
-
-      socket.data.userId = decoded.sub;
-      socket.data.email = decoded.email ?? "";
-
+      const token = socket.handshake.auth?.token ??
+        extractToken(socket.handshake.headers.authorization);
+      if (typeof token !== "string" || !token) throw new Error("Invalid token");
+      const claims = verifyAccessToken(token);
+      socket.data.userId = claims.sub;
+      socket.data.expiresAt = claims.exp * 1000;
       next();
     } catch {
-      next(new Error("Invalid socket auth token"));
+      next(new Error("Invalid or expired socket auth token"));
     }
   });
 
-  io.on("connection", (socket) => {
+  server.on("connection", socket => {
+    enforceExpiry(socket);
     socket.on("ticket:join", async (payload, callback) => {
+      const reply = (ok: boolean, error?: string) => {
+        if (typeof callback === "function") callback(error ? { ok, error } : { ok });
+      };
+      const ticketId = payload?.ticketId;
+      if (!isTicketId(ticketId)) {
+        reply(false, "Invalid ticketId");
+        return;
+      }
       try {
-        const ticketId = payload?.ticketId;
-
-        if (!ticketId) {
-          callback?.({ ok: false, error: "ticketId is required" });
+        if (!sessionIsLive(socket)) return;
+        const allowed = await canUserAccessTicket(socket.data.userId, ticketId);
+        if (!sessionIsLive(socket)) return;
+        if (!allowed) {
+          await socket.leave(ticketRoom(ticketId));
+          reply(false, ACCESS_DENIED);
           return;
         }
-
-        const ticket = await prisma.ticket.findUnique({
-          where: {
-            id: ticketId
-          },
-          select: {
-            id: true,
-            organizationId: true,
-            customerId: true
-          }
-        });
-
-        if (!ticket) {
-          callback?.({ ok: false, error: "Ticket not found" });
-          return;
-        }
-
-        const membership = await prisma.organizationMember.findUnique({
-          where: {
-            organizationId_userId: {
-              organizationId: ticket.organizationId,
-              userId: socket.data.userId
-            }
-          },
-          select: {
-            id: true,
-            role: true
-          }
-        });
-
-        if (!membership) {
-          callback?.({
-            ok: false,
-            error: "You are not a member of this organization"
-          });
-          return;
-        }
-
-        const isCustomer = membership.role === "CUSTOMER";
-
-        if (isCustomer && ticket.customerId !== socket.data.userId) {
-          callback?.({ ok: false, error: "You cannot join this ticket" });
-          return;
-        }
-
         await socket.join(ticketRoom(ticketId));
-
-        callback?.({ ok: true });
+        if (!sessionIsLive(socket)) return;
+        reply(true);
       } catch {
-        callback?.({ ok: false, error: "Failed to join ticket room" });
+        logRealtimeFailure("join");
+        reply(false, ACCESS_DENIED);
       }
     });
 
     socket.on("ticket:leave", async (payload, callback) => {
-      const ticketId = payload?.ticketId;
-
-      if (!ticketId) {
-        callback?.({ ok: false, error: "ticketId is required" });
+      const reply = (ok: boolean, error?: string) => {
+        if (typeof callback === "function") callback(error ? { ok, error } : { ok });
+      };
+      if (!isTicketId(payload?.ticketId)) {
+        reply(false, "Invalid ticketId");
         return;
       }
-
-      await socket.leave(ticketRoom(ticketId));
-
-      callback?.({ ok: true });
+      try {
+        await socket.leave(ticketRoom(payload.ticketId));
+        reply(true);
+      } catch {
+        logRealtimeFailure("leave");
+        reply(false, ACCESS_DENIED);
+      }
     });
   });
-
-  return io;
+  return server;
 }
 
 export function getRealtimeServer() {
   return io;
 }
 
-export function emitTicketMessageCreated(payload: {
+export async function emitTicketMessageCreated(payload: {
   ticketId: string;
   message: {
     id: string;
@@ -169,17 +136,20 @@ export function emitTicketMessageCreated(payload: {
     senderId: string;
     body: string;
     createdAt: Date;
-    sender: {
-      id: string;
-      name: string;
-      email: string;
-      avatarUrl: string | null;
-    };
+    sender: { id: string; name: string; email: string; avatarUrl: string | null };
   };
 }) {
-  if (!io) return;
-
-  io.to(ticketRoom(payload.ticketId)).emit("ticket:message_created", {
+  const server = io;
+  if (!server) return;
+  if (!isTicketId(payload.ticketId) || payload.message.ticketId !== payload.ticketId) {
+    logRealtimeFailure("notification");
+    return;
+  }
+  const room = ticketRoom(payload.ticketId);
+  // Single-process deployment: room membership is only a candidate list.
+  // A shared adapter will also need distributed recipient enumeration.
+  const ids = [...(server.sockets.adapter.rooms.get(room) ?? [])];
+  const event = {
     ticketId: payload.ticketId,
     message: {
       id: payload.message.id,
@@ -194,5 +164,24 @@ export function emitTicketMessageCreated(payload: {
         avatarUrl: payload.message.sender.avatarUrl
       }
     }
-  });
+  };
+  await Promise.all(ids.map(async id => {
+    const socket = server.sockets.sockets.get(id);
+    if (!socket || !sessionIsLive(socket)) return;
+    try {
+      const allowed = await canUserAccessTicket(socket.data.userId, payload.ticketId);
+      if (!allowed) {
+        await socket.leave(room);
+        return;
+      }
+      // Recheck after lookup: no late, disconnected or unsubscribed delivery.
+      if (sessionIsLive(socket) && socket.rooms.has(room)) {
+        socket.emit("ticket:message_created", event);
+      }
+    } catch {
+      logRealtimeFailure("delivery");
+      // Fail closed, including adapter/DB failures. No payload is emitted.
+      socket.disconnect(true);
+    }
+  }));
 }

@@ -1,7 +1,10 @@
 import request from "supertest";
 import { app } from "../app.js";
 import { prisma } from "../config/prisma.js";
-import { closeKnowledgeProcessingResources } from "../modules/knowledge-base/kb.queue.js";
+import http from "node:http";
+import type { AddressInfo } from "node:net";
+import { io as connectSocket } from "socket.io-client";
+import { initRealtimeServer, emitTicketMessageCreated } from "../modules/realtime/realtime.service.js";
 
 type TestUser = {
   id: string;
@@ -126,7 +129,6 @@ describe("SupportIQ RBAC integration", () => {
   });
 
   afterAll(async () => {
-    await closeKnowledgeProcessingResources();
     await prisma.$disconnect();
   });
 
@@ -260,6 +262,45 @@ describe("SupportIQ RBAC integration", () => {
       .expect(400);
   });
 
+  it("keeps assignment independent and preserves lifecycle timestamps across retries", async () => {
+    const fresh = await createTicket(customer, orgId);
+    const assigned = await request(app)
+      .patch(`/api/v1/tickets/${fresh.id}/assign`)
+      .set(authHeader(agent))
+      .send({ assigneeId: agent.id })
+      .expect(200);
+    expect(assigned.body.data.ticket.status).toBe("OPEN");
+
+    await request(app).patch(`/api/v1/tickets/${fresh.id}/status`)
+      .set(authHeader(agent)).send({ status: "CLOSED" }).expect(409);
+    const resolved = await request(app).patch(`/api/v1/tickets/${fresh.id}/status`)
+      .set(authHeader(agent)).send({ status: "RESOLVED" }).expect(200);
+    const repeated = await request(app).patch(`/api/v1/tickets/${fresh.id}/status`)
+      .set(authHeader(agent)).send({ status: "RESOLVED" }).expect(200);
+    expect(repeated.body.data.ticket.resolvedAt).toBe(resolved.body.data.ticket.resolvedAt);
+    expect(await prisma.activityLog.count({ where: { ticketId: fresh.id, type: "STATUS_CHANGED" } })).toBe(1);
+
+    const closed = await request(app).patch(`/api/v1/tickets/${fresh.id}/status`)
+      .set(authHeader(agent)).send({ status: "CLOSED" }).expect(200);
+    expect(closed.body.data.ticket.resolvedAt).toBe(resolved.body.data.ticket.resolvedAt);
+    expect(closed.body.data.ticket.closedAt).not.toBeNull();
+    const reopened = await request(app).patch(`/api/v1/tickets/${fresh.id}/status`)
+      .set(authHeader(agent)).send({ status: "OPEN" }).expect(200);
+    expect(reopened.body.data.ticket.resolvedAt).toBeNull();
+    expect(reopened.body.data.ticket.closedAt).toBeNull();
+    expect(reopened.body.data.ticket.assigneeId).toBe(agent.id);
+  });
+
+  it("does not replace the first staff response time on later replies", async () => {
+    const fresh = await createTicket(customer, orgId);
+    const first = await request(app).post(`/api/v1/tickets/${fresh.id}/messages`)
+      .set(authHeader(agent)).send({ body: "First staff reply" }).expect(201);
+    await request(app).post(`/api/v1/tickets/${fresh.id}/messages`)
+      .set(authHeader(admin)).send({ body: "Second staff reply" }).expect(201);
+    const saved = await prisma.ticket.findUniqueOrThrow({ where: { id: fresh.id } });
+    expect(saved.firstResponseAt?.toISOString()).toBe(first.body.data.message.createdAt);
+  });
+
   it("allows public messages for ticket participant and staff", async () => {
     await request(app)
       .post(`/api/v1/tickets/${ticketId}/messages`)
@@ -334,6 +375,53 @@ describe("SupportIQ RBAC integration", () => {
       .delete(`/api/v1/organizations/${orgId}/kb/documents/fake-document-id`)
       .set(authHeader(customer))
       .expect(403);
+  });
+
+  it("revokes joined sockets after real membership removal and ownership change", async () => {
+    const removedAgent = await registerUser("Socket Agent", "socket-agent");
+    const added = await addMember(owner, orgId, removedAgent.email, "AGENT");
+    const fresh = await createTicket(customer, orgId);
+    const httpServer = http.createServer();
+    const realtime = initRealtimeServer(httpServer);
+    await new Promise<void>(resolve => httpServer.listen(0, "127.0.0.1", resolve));
+    const url = `http://127.0.0.1:${(httpServer.address() as AddressInfo).port}`;
+    const sockets = [removedAgent, customer].map(user => connectSocket(url, {
+      autoConnect: false, transports: ["websocket"], reconnection: false,
+      auth: { token: user.accessToken }
+    }));
+    const received = jest.fn();
+    try {
+      for (const socket of sockets) {
+        socket.on("ticket:message_created", received);
+        await new Promise<void>((resolve, reject) => {
+          socket.once("connect", resolve);
+          socket.once("connect_error", reject);
+          socket.connect();
+        });
+        expect(await socket.timeout(2000).emitWithAck("ticket:join", { ticketId: fresh.id }))
+          .toEqual({ ok: true });
+      }
+      await request(app).delete(`/api/v1/organizations/${orgId}/members/${added.id}`)
+        .set(authHeader(admin)).expect(200);
+      // Ownership reassignment is a DB fixture change; there is no public transfer API.
+      await prisma.ticket.update({ where: { id: fresh.id }, data: { customerId: otherCustomer.id } });
+      const response = await request(app).post(`/api/v1/tickets/${fresh.id}/messages`)
+        .set(authHeader(owner)).send({ body: "Persisted after access revocation" }).expect(201);
+      const message = response.body.data.message;
+      // Await an explicit delivery check as well as the service's detached notification.
+      await emitTicketMessageCreated({
+        ticketId: fresh.id, message: { ...message, createdAt: new Date(message.createdAt) }
+      });
+      for (const socket of sockets) {
+        await socket.timeout(2000).emitWithAck("ticket:leave", { ticketId: "barrier" });
+        expect(realtime.sockets.sockets.get(socket.id!)?.rooms.has(`ticket:${fresh.id}`)).toBe(false);
+      }
+      expect(received).not.toHaveBeenCalled();
+      expect(await prisma.ticketMessage.findUnique({ where: { id: message.id } })).not.toBeNull();
+    } finally {
+      sockets.forEach(socket => socket.disconnect());
+      await new Promise<void>(resolve => realtime.close(() => resolve()));
+    }
   });
 
   it("allows agents to search KB but blocks customers", async () => {

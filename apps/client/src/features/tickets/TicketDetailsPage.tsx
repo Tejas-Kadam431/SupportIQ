@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 import { Link, useParams } from "react-router-dom";
 import { useAppSelector } from "../../app/hooks";
 import {
@@ -14,15 +15,8 @@ import { AiDraftPanel } from "./AiDraftPanel";
 import { ActivityTimeline } from "./ActivityTimeline";
 import "./tickets.css";
 
-const statuses: TicketStatus[] = [
-  "OPEN",
-  "IN_PROGRESS",
-  "WAITING",
-  "RESOLVED",
-  "CLOSED"
-];
-
 export function TicketDetailsPage() {
+  const [actionError, setActionError] = useState("");
   const { ticketId } = useParams();
   const user = useAppSelector((state) => state.auth.user);
 
@@ -44,6 +38,7 @@ export function TicketDetailsPage() {
 
   async function handleStatusChange(nextStatus: TicketStatus) {
     if (!ticketId) return;
+    setActionError("");
 
     try {
       await updateStatus({
@@ -51,12 +46,13 @@ export function TicketDetailsPage() {
         status: nextStatus
       }).unwrap();
     } catch (error) {
-      console.error("Failed to update ticket status:", error);
+      setActionError(getApiErrorMessage(error, "Could not update status. Refresh and try again."));
     }
   }
 
   async function handleAssignToMe() {
     if (!ticketId || !user) return;
+    setActionError("");
 
     try {
       await assignTicket({
@@ -64,12 +60,13 @@ export function TicketDetailsPage() {
         assigneeId: user.id
       }).unwrap();
     } catch (error) {
-      console.error("Failed to assign ticket:", error);
+      setActionError(getApiErrorMessage(error, "Could not assign ticket."));
     }
   }
 
   async function handleUnassign() {
     if (!ticketId) return;
+    setActionError("");
 
     try {
       await assignTicket({
@@ -77,7 +74,7 @@ export function TicketDetailsPage() {
         assigneeId: null
       }).unwrap();
     } catch (error) {
-      console.error("Failed to unassign ticket:", error);
+      setActionError(getApiErrorMessage(error, "Could not unassign ticket."));
     }
   }
 
@@ -180,6 +177,7 @@ export function TicketDetailsPage() {
       </section>
 
       <section className="siq-card ticket-actions-card">
+        {actionError && <div role="alert" className="ticket-alert ticket-alert-error">{actionError}</div>}
         <div className="siq-card-header">
           <div>
             <h2 className="siq-card-title">Ticket Actions</h2>
@@ -201,7 +199,7 @@ export function TicketDetailsPage() {
               }
               className="ticket-action-select"
             >
-              {statuses.map((status) => (
+              {[ticket.status, ...(ticket.allowedTransitions ?? [])].map((status) => (
                 <option key={status} value={status}>
                   {formatLabel(status)}
                 </option>
