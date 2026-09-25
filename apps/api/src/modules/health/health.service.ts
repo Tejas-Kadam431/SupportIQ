@@ -1,4 +1,4 @@
-export interface HealthService {
+export interface HealthData {
   status: string;
   service: string;
   timestamp: string;
@@ -6,12 +6,12 @@ export interface HealthService {
   environment: string;
 }
 
-export function getHealthService(): HealthService {
+export function HealthService(): HealthData {
   return {
-    status: 'ok',
-    service: 'resolveflow-api',
+    status: "ok",
+    service: "ResolveFlow-api",
     timestamp: new Date().toISOString(),
-    uptimeSeconds: process.uptime(),
-    environment: process.env.NODE_ENV || 'development',
+    uptimeSeconds: Math.floor(process.uptime()),
+    environment: process.env.NODE_ENV || "development",
   };
 }

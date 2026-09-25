@@ -1,6 +1,7 @@
 import { prisma } from "../../config/prisma.js";
 import { AppError } from "../../common/errors/AppError.js";
 import { assertOrgMember } from "../organizations/org.service.js";
+import { allowedTicketTransitions, ticketStatusChange } from "./ticket.policy.js";
 import type {
   AssignTicketInput,
   CreateTicketInput,
@@ -39,25 +40,6 @@ function parseSort(sort: string | undefined) {
   return {
     [field]: direction === "asc" ? "asc" : "desc"
   };
-}
-
-function getStatusDates(status: string) {
-  const now = new Date();
-
-  if (status === "RESOLVED") {
-    return {
-      resolvedAt: now,
-      closedAt: null
-    };
-  }
-
-  if (status === "CLOSED") {
-    return {
-      closedAt: now
-    };
-  }
-
-  return {};
 }
 
 function assertStaffRole(role: Role) {
@@ -241,7 +223,7 @@ export async function getTicketOrThrow(userId: string, ticketId: string) {
 export async function getTicketDetails(userId: string, ticketId: string) {
   const { ticket } = await getTicketOrThrow(userId, ticketId);
 
-  return prisma.ticket.findUnique({
+  const details = await prisma.ticket.findUnique({
     where: {
       id: ticket.id
     },
@@ -277,6 +259,8 @@ export async function getTicketDetails(userId: string, ticketId: string) {
       }
     }
   });
+  if (!details) throw new AppError("Ticket not found", 404);
+  return { ...details, allowedTransitions: allowedTicketTransitions(details.status) };
 }
 
 export async function updateTicketStatus(
@@ -289,15 +273,24 @@ export async function updateTicketStatus(
 
   assertStaffRole(role);
 
+  const change = ticketStatusChange(ticket, input.status);
+  if (!change) return getTicketDetails(userId, ticketId);
+
   const updatedTicket = await prisma.$transaction(async (tx) => {
-    const updated = await tx.ticket.update({
+    const result = await tx.ticket.updateMany({
       where: {
-        id: ticket.id
+        id: ticket.id,
+        organizationId: ticket.organizationId,
+        status: ticket.status,
+        updatedAt: ticket.updatedAt
       },
-      data: {
-        status: input.status,
-        ...getStatusDates(input.status)
-      },
+      data: change
+    });
+    if (result.count !== 1) {
+      throw new AppError("Ticket changed. Refresh and try again.", 409);
+    }
+    const updated = await tx.ticket.findUniqueOrThrow({
+      where: { id: ticket.id },
       include: {
         customer: {
           select: {
@@ -368,14 +361,22 @@ export async function assignTicket(
   }
 
   const updatedTicket = await prisma.$transaction(async (tx) => {
-    const updated = await tx.ticket.update({
+    const result = await tx.ticket.updateMany({
       where: {
-        id: ticket.id
+        id: ticket.id,
+        organizationId: ticket.organizationId,
+        assigneeId: ticket.assigneeId,
+        updatedAt: ticket.updatedAt
       },
       data: {
-        assigneeId: input.assigneeId,
-        status: ticket.status === "OPEN" && input.assigneeId ? "IN_PROGRESS" : ticket.status
-      },
+        assigneeId: input.assigneeId
+      }
+    });
+    if (result.count !== 1) {
+      throw new AppError("Ticket changed. Refresh and try again.", 409);
+    }
+    const updated = await tx.ticket.findUniqueOrThrow({
+      where: { id: ticket.id },
       include: {
         customer: {
           select: {

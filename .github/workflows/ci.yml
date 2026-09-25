@@ -73,13 +73,16 @@ jobs:
         run: pnpm --dir apps/api db:generate
 
       - name: Prepare test database
-        run: pnpm --dir apps/api exec prisma db push
+        run: pnpm --dir apps/api db:test:migrate
 
       - name: Build API
         run: pnpm --dir apps/api build
 
-      - name: Run API tests
-        run: pnpm --dir apps/api test
+      - name: Run API unit tests
+        run: pnpm --dir apps/api test:unit
+
+      - name: Run API integration tests
+        run: pnpm --dir apps/api test:integration
 
       - name: Build client
         run: pnpm --dir apps/client build

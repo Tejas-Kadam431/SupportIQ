@@ -15,24 +15,16 @@ import { aiRoutes } from "./modules/ai/ai.routes.js";
 import { activityRoutes } from "./modules/activity/activity.routes.js";
 import { dashboardRoutes } from "./modules/dashboard/dashboard.routes.js";
 import { healthRoutes } from "./modules/health/health.routes.js";
+import { isAllowedOrigin } from "./config/origins.js";
 
 export const app = express();
 
 app.set("trust proxy", 1);
 
-function getAllowedOrigins() {
-  return (process.env.CLIENT_URL ?? "http://localhost:5173")
-    .split(",")
-    .map((origin) => origin.trim())
-    .filter(Boolean);
-}
-
 app.use(
   cors({
     origin(origin, callback) {
-      const allowedOrigins = getAllowedOrigins();
-
-      if (!origin || allowedOrigins.includes(origin)) {
+      if (isAllowedOrigin(origin)) {
         callback(null, true);
         return;
       }
@@ -64,7 +56,7 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(morgan("dev"));
 
-app.use('/health',healthRoutes);
+app.use("/health", healthRoutes);
 
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/organizations", orgRoutes);
