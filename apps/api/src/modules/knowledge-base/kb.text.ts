@@ -5,22 +5,18 @@ import path from "node:path";
 
 const nodeRequire = createRequire(path.join(process.cwd(), "package.json"));
 
-type PdfParseResult = {
-  text: string;
-};
-
-const pdfParse = nodeRequire("pdf-parse") as (
-  buffer: Buffer
-) => Promise<PdfParseResult>;
 
 export async function extractTextFromFile(filePath: string, mimeType: string) {
+  return extractTextFromBytes(await fs.readFile(filePath), filePath, mimeType);
+}
+
+export async function extractTextFromBytes(buffer: Buffer, filePath: string, mimeType: string) {
   const extension = path.extname(filePath).toLowerCase();
 
   if (mimeType === "application/pdf" || extension === ".pdf") {
-    const buffer = await fs.readFile(filePath);
-    const result = await pdfParse(buffer);
-
-    return cleanExtractedText(result.text);
+    const { PDFParse } = nodeRequire("pdf-parse") as typeof import("pdf-parse");
+    const parser = new PDFParse({ data: buffer });
+    try { return cleanExtractedText((await parser.getText()).text); } finally { await parser.destroy(); }
   }
 
   if (
@@ -30,7 +26,7 @@ export async function extractTextFromFile(filePath: string, mimeType: string) {
     extension === ".md" ||
     extension === ".markdown"
   ) {
-    const content = await fs.readFile(filePath, "utf8");
+    const content = buffer.toString("utf8");
 
     return cleanExtractedText(content);
   }

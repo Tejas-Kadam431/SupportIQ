@@ -234,14 +234,16 @@ describe("SupportIQ RBAC integration", () => {
       .expect(403);
   });
 
-  it("allows agent to assign ticket and blocks customer assignment", async () => {
+  it("allows admin to assign ticket and blocks agent/customer assignment", async () => {
     await request(app)
       .patch(`/api/v1/tickets/${ticketId}/assign`)
-      .set(authHeader(agent))
+      .set(authHeader(admin))
       .send({
         assigneeId: agent.id
       })
       .expect(200);
+
+    await request(app).patch(`/api/v1/tickets/${ticketId}/assign`).set(authHeader(agent)).send({ assigneeId: agent.id }).expect(403);
 
     await request(app)
       .patch(`/api/v1/tickets/${ticketId}/assign`)
@@ -266,7 +268,7 @@ describe("SupportIQ RBAC integration", () => {
     const fresh = await createTicket(customer, orgId);
     const assigned = await request(app)
       .patch(`/api/v1/tickets/${fresh.id}/assign`)
-      .set(authHeader(agent))
+      .set(authHeader(admin))
       .send({ assigneeId: agent.id })
       .expect(200);
     expect(assigned.body.data.ticket.status).toBe("OPEN");

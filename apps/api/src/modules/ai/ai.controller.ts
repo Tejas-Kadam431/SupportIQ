@@ -1,4 +1,5 @@
 import type { Response } from "express";
+import { getCopilotRun, sendCopilotResponse } from "./ai.decision.js";
 import { AppError } from "../../common/errors/AppError.js";
 import type { AuthenticatedRequest } from "../../common/middleware/auth.middleware.js";
 import {
@@ -70,4 +71,14 @@ export async function evaluateCopilotHandler(
       evaluation
     }
   });
+}
+
+export async function sendCopilotHandler(req: AuthenticatedRequest, res: Response) {
+  const result = await sendCopilotResponse(getUserId(req), getParam(req, "ticketId"), getParam(req, "runId"), req.body);
+  return res.status(result.replayed ? 200 : 201).json({ message: "Copilot reply sent", data: result });
+}
+
+export async function getCopilotRunHandler(req: AuthenticatedRequest, res: Response) {
+  const run = await getCopilotRun(getUserId(req), getParam(req, "ticketId"), getParam(req, "runId"));
+  return res.json({ data: { run } });
 }

@@ -1,3 +1,6 @@
+import { lockOrganization, currentMembership } from "../organizations/org.transaction.js";
+import { isAssignableRole, canAssignTicket, activeTicketStatuses } from "./assignment.policy.js";
+import { unassignActiveTickets } from "./assignment.service.js";
 import { prisma } from "../../config/prisma.js";
 import { AppError } from "../../common/errors/AppError.js";
 import { assertOrgMember } from "../organizations/org.service.js";
@@ -221,7 +224,7 @@ export async function getTicketOrThrow(userId: string, ticketId: string) {
 }
 
 export async function getTicketDetails(userId: string, ticketId: string) {
-  const { ticket } = await getTicketOrThrow(userId, ticketId);
+  const { ticket, membership } = await getTicketOrThrow(userId, ticketId);
 
   const details = await prisma.ticket.findUnique({
     where: {
@@ -260,7 +263,7 @@ export async function getTicketDetails(userId: string, ticketId: string) {
     }
   });
   if (!details) throw new AppError("Ticket not found", 404);
-  return { ...details, allowedTransitions: allowedTicketTransitions(details.status) };
+  return { ...details, canAssign: canAssignTicket(membership.role), allowedTransitions: allowedTicketTransitions(details.status) };
 }
 
 export async function updateTicketStatus(
@@ -277,6 +280,10 @@ export async function updateTicketStatus(
   if (!change) return getTicketDetails(userId, ticketId);
 
   const updatedTicket = await prisma.$transaction(async (tx) => {
+    await lockOrganization(tx, ticket.organizationId);
+    const actor = await currentMembership(tx, userId, ticket.organizationId);
+    assertStaffRole(actor.role);
+
     const result = await tx.ticket.updateMany({
       where: {
         id: ticket.id,
@@ -288,6 +295,15 @@ export async function updateTicketStatus(
     });
     if (result.count !== 1) {
       throw new AppError("Ticket changed. Refresh and try again.", 409);
+    }
+    // Historical assignees may no longer be eligible when a ticket is reopened.
+    if (ticket.assigneeId && activeTicketStatuses.includes(input.status)) {
+      const candidate = await tx.organizationMember.findUnique({ where: {
+        organizationId_userId: { organizationId: ticket.organizationId, userId: ticket.assigneeId }
+      } });
+      if (!candidate || !isAssignableRole(candidate.role)) {
+        await unassignActiveTickets(tx, ticket.organizationId, ticket.assigneeId, userId, "REOPENED_INELIGIBLE", ticket.id);
+      }
     }
     const updated = await tx.ticket.findUniqueOrThrow({
       where: { id: ticket.id },
@@ -326,7 +342,7 @@ export async function updateTicketStatus(
     });
 
     return updated;
-  });
+  }, { isolationLevel: "ReadCommitted" });
 
   return updatedTicket;
 }
@@ -339,28 +355,18 @@ export async function assignTicket(
   const { ticket, membership } = await getTicketOrThrow(userId, ticketId);
   const role = membership.role as Role;
 
-  assertStaffRole(role);
-
-  if (input.assigneeId) {
-    const assigneeMembership = await prisma.organizationMember.findUnique({
-      where: {
-        organizationId_userId: {
-          organizationId: ticket.organizationId,
-          userId: input.assigneeId
-        }
-      }
-    });
-
-    if (!assigneeMembership) {
-      throw new AppError("Assignee is not a member of this organization", 400);
-    }
-
-    if (assigneeMembership.role === "CUSTOMER") {
-      throw new AppError("Cannot assign ticket to a customer", 400);
-    }
-  }
+  if (!canAssignTicket(role)) throw new AppError("Only owners and admins can assign tickets", 403);
 
   const updatedTicket = await prisma.$transaction(async (tx) => {
+    await lockOrganization(tx, ticket.organizationId);
+    const actor = await currentMembership(tx, userId, ticket.organizationId);
+    if (!canAssignTicket(actor.role)) throw new AppError("Only owners and admins can assign tickets", 403);
+    if (input.assigneeId) {
+      const candidate = await tx.organizationMember.findUnique({ where: {
+        organizationId_userId: { organizationId: ticket.organizationId, userId: input.assigneeId }
+      } });
+      if (!candidate || !isAssignableRole(candidate.role)) throw new AppError("Assignee must be a current staff member", 400);
+    }
     const result = await tx.ticket.updateMany({
       where: {
         id: ticket.id,
@@ -404,17 +410,18 @@ export async function assignTicket(
         actorId: userId,
         type: "TICKET_ASSIGNED",
         message: input.assigneeId
-          ? `Ticket assigned to user ${input.assigneeId}`
+          ? `Ticket assigned to ${updated.assignee?.name ?? "staff member"}`
           : "Ticket unassigned",
         metadata: {
           oldAssigneeId: ticket.assigneeId,
-          newAssigneeId: input.assigneeId
+          newAssigneeId: input.assigneeId,
+          reason: ticket.assigneeId ? "MANUAL_REASSIGNMENT" : "MANUAL_ASSIGNMENT"
         }
       }
     });
 
     return updated;
-  });
+  }, { isolationLevel: "ReadCommitted" });
 
   return updatedTicket;
 }

@@ -20,6 +20,8 @@ const ticket = {
   firstResponseAt: null, updatedAt: new Date("2026-01-01"), title: "Help"
 };
 const tx = {
+  $queryRaw: jest.fn(),
+  organizationMember: { findUnique: jest.fn() },
   ticket: { updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
   ticketMessage: { create: jest.fn() },
   activityLog: { create: jest.fn() }
@@ -28,7 +30,8 @@ const tx = {
 beforeEach(() => {
   jest.resetAllMocks();
   (prisma.ticket.findUnique as jest.Mock).mockResolvedValue(ticket);
-  (assertOrgMember as jest.Mock).mockResolvedValue({ role: "AGENT" });
+  (assertOrgMember as jest.Mock).mockResolvedValue({ role: "ADMIN" });
+  tx.organizationMember.findUnique.mockImplementation(async ({ where }) => where.organizationId_userId.userId === "outsider" ? null : { role: "ADMIN" });
   (prisma.organizationMember.findUnique as jest.Mock).mockResolvedValue({ role: "AGENT" });
   (prisma.$transaction as jest.Mock).mockImplementation(async (fn) => fn(tx));
   tx.ticket.updateMany.mockResolvedValue({ count: 1 });
@@ -45,9 +48,9 @@ test.each(["agent-a", null])("assignment to %s never changes status", async (ass
 });
 
 test.each([null, { role: "CUSTOMER" }])("rejects ineligible assignee %j", async membership => {
-  (prisma.organizationMember.findUnique as jest.Mock).mockResolvedValue(membership);
+  tx.organizationMember.findUnique.mockResolvedValueOnce({ role: "ADMIN" }).mockResolvedValueOnce(membership);
   await expect(assignTicket("agent-a", ticket.id, { assigneeId: "outsider" })).rejects.toMatchObject({ statusCode: 400 });
-  expect(prisma.$transaction).not.toHaveBeenCalled();
+  expect(tx.ticket.updateMany).not.toHaveBeenCalled();
 });
 
 test("customers cannot change lifecycle or assignment", async () => {

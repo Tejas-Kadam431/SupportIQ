@@ -1,3 +1,4 @@
+import type { TicketMessage } from "./messagesApi";
 import { api } from "../../app/api";
 import type {
   TicketPriority,
@@ -16,7 +17,8 @@ export type AiDraftConfidence =
 
 export type AiSearchMode =
   | "semantic"
-  | "keyword";
+  | "keyword"
+  | "hybrid";
 
 export type AiProvider =
   | "gemini"
@@ -40,6 +42,9 @@ export type CopilotFailureReason =
   | "OTHER";
 
 export type AiDraftSource = {
+  documentVersionId?: string;
+  versionNumber?: number;
+  publishedAt?: string;
   chunkId: string;
   documentId: string;
   documentName: string;
@@ -70,6 +75,9 @@ export type GenerateAiDraftResponse = {
 
   data: {
     runId: string | null;
+    evidenceLevel?: "STRONG" | "LIMITED" | "INSUFFICIENT";
+    evidenceDecision?: string;
+    evidenceReason?: string;
 
     topic: string;
     issueSummary: string;
@@ -100,9 +108,8 @@ export type GenerateAiDraftRequest = {
 type EvaluateCopilotRequest = {
   ticketId: string;
   runId: string;
-  disposition: CopilotDisposition;
-  reason?: CopilotFailureReason;
-  finalMessage?: string;
+  disposition: "REJECTED";
+  reason: CopilotFailureReason;
 };
 
 export const aiApi = api.injectEndpoints({
@@ -130,6 +137,18 @@ export const aiApi = api.injectEndpoints({
       ]
     }),
 
+    sendCopilot: builder.mutation<
+      { data: { message: TicketMessage; evaluation: { disposition: "ACCEPTED" | "EDITED" }; replayed: boolean } },
+      { ticketId: string; runId: string; finalMessage: string }
+    >({
+      query: ({ ticketId, runId, finalMessage }) => ({
+        url: `/tickets/${ticketId}/copilot-runs/${runId}/send`, method: "POST", body: { finalMessage }
+      }),
+      invalidatesTags: (_result, _error, { ticketId }) => [
+        "Dashboard", "Messages", { type: "Messages", id: ticketId }, "Tickets", { type: "Tickets", id: ticketId }
+      ]
+    }),
+
     evaluateCopilot: builder.mutation<
       unknown,
       EvaluateCopilotRequest
@@ -154,5 +173,6 @@ export const aiApi = api.injectEndpoints({
 
 export const {
   useGenerateAiDraftMutation,
+  useSendCopilotMutation,
   useEvaluateCopilotMutation
 } = aiApi;

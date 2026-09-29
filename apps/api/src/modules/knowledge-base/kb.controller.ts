@@ -1,3 +1,5 @@
+import { getVersionHistory, publishKnowledgeVersion } from "./kb.version.service.js";
+import { resolveCopilotKnowledge } from "./kb.provenance.js";
 import type { Request, Response } from "express";
 import { AppError } from "../../common/errors/AppError.js";
 import type { AuthenticatedRequest } from "../../common/middleware/auth.middleware.js";
@@ -45,10 +47,10 @@ export async function uploadDocumentHandler(req: AuthenticatedRequest, res: Resp
     mimeType: req.file.mimetype,
     sizeBytes: req.file.size,
     storagePath: req.file.path
-  });
+  }, typeof req.params.documentId === "string" ? req.params.documentId : undefined);
 
   return res.status(201).json({
-    message: "Document uploaded and processed successfully",
+    message: "Version uploaded. Processing is queued; publish it when ready.",
     data: {
       document
     }
@@ -117,7 +119,8 @@ export async function reprocessDocumentHandler(
   const document = await reprocessKnowledgeDocument(
     orgId,
     documentId,
-    userId
+    userId,
+    typeof req.params.versionId === "string" ? req.params.versionId : undefined
   );
 
   return res.status(200).json({
@@ -131,9 +134,12 @@ export async function deleteDocumentHandler(req: AuthenticatedRequest, res: Resp
   const orgId = getParam(req, "orgId");
   const documentId = getParam(req, "documentId");
 
-  await deleteKnowledgeDocument(orgId, documentId);
+  await deleteKnowledgeDocument(orgId, documentId, getUserId(req));
 
   return res.status(200).json({
-    message: "Document deleted successfully"
+    message: "Document archived. Historical versions retained."
   });
 }
+export async function versionHistoryHandler(req:AuthenticatedRequest,res:Response){return res.json({data:{document:await getVersionHistory(getUserId(req),getParam(req,"orgId"),getParam(req,"documentId"))}});}
+export async function publishVersionHandler(req:AuthenticatedRequest,res:Response){return res.json({data:{version:await publishKnowledgeVersion(getUserId(req),getParam(req,"orgId"),getParam(req,"documentId"),getParam(req,"versionId"),req.body.expectedCurrentVersionId)}});}
+export async function copilotKnowledgeHandler(req:AuthenticatedRequest,res:Response){return res.json({data:await resolveCopilotKnowledge(getUserId(req),getParam(req,"orgId"),getParam(req,"runId"))});}

@@ -1,5 +1,7 @@
 # Authoritative repository reconciliation
 
+Current implementation update: **Stage C — session reuse protection and membership consistency**, appended below on 2026-09-26. Stage A/B checkout-state statements are historical; the validated A/B work was subsequently committed as `817bebb` and pushed to `codex/supportiq-hardening`.
+
 ## Stage A validated — 2026-09-25
 
 Active hardening worktree: `C:/Users/kadam/.codex/visualizations/2026/09/24/01a0d482-ea6d-7251-a026-67608cd44412/supportiq-hardening`.
@@ -274,3 +276,517 @@ No schema migration was needed. Multi-process deployment needs an explicit adapt
 - The saved local health response retains `ResolveFlow-api` and integer uptime; upstream uses `resolveflow-api` and fractional uptime. Naming was preserved, not silently rebranded. Runtime health response shape remains `{ data: ... }`.
 
 No secrets were printed, no original changes discarded, no commits or deployments made.
+
+
+## Stage C — session reuse protection and membership consistency
+
+Implemented 2026-09-26 in the authoritative hardening worktree, branch `codex/supportiq-hardening`, starting at `817bebb` (upstream base `6f5b5e237bf18e5dece0a7d1294dfb1778d4793d`). These changes are intentionally **uncommitted and unpushed**. No deployment, production migration or seed was performed. Stage A/B implementation and the original checkout are preserved; Stage C adds only the reopening eligibility check needed to preserve assignment consistency across Phase 1 transitions.
+
+### Previous risks and refresh-session model
+
+Single-use refresh rotation rejected consumed credentials but had no family identifier to revoke a stolen credential's replacements. Membership removal/demotion was separate from assignment validation and could strand active tickets with invalid assignees.
+
+Migration `20260926000000_refresh_sessions` adds `RefreshSession` with userId, createdAt, lastUsedAt, expiresAt, revokedAt and a small LOGOUT/REUSE_DETECTED reason enum. RefreshToken gains nullable sessionId and consumedAt; existing revokedAt, hashed token storage and indexes remain. The family ID plus each token's consumption timestamp represent session lineage; no parent-pointer or device fingerprint is needed for whole-family invalidation. No plaintext credentials, IP metadata or user-agent tracking are added.
+
+Login and registration create a session and its first hashed opaque token together through Prisma's atomic nested create. Every replacement belongs to that same session. A session has an absolute seven-day lifetime; rotation no longer extends login indefinitely. Cookie maxAge derives from the returned session expiry instead of a second seven-day constant. Access tokens remain JWTs; refresh credentials remain opaque and cookie-only. HTTP success JSON explicitly projects user/accessToken and never session internals, hashes or refresh secrets.
+
+### Exact refresh/reuse and concurrency policy
+
+Rotation finds the hashed credential, locks its RefreshSession row FOR UPDATE, then rereads session and token under explicitly selected READ COMMITTED isolation. It checks current revocation, session/token expiry and token ownership, conditionally consumes the token, inserts its replacement and updates lastUsedAt in one transaction. Failed replacement insertion rolls back consumption. Storage errors are wrapped as a generic 503 with a fixed structured event, preventing raw Prisma query arguments from reaching the global error logger.
+
+A known, consumed credential within an unexpired, unrevoked session triggers REUSE_DETECTED revocation of the entire family. The transaction returns a failure result so that the revocation **commits before** the external generic 401 is thrown. Descendants are invalid because every refresh checks the family. Unknown, malformed, legacy, expired, individually revoked and session-revoked credentials have distinct fixed internal reasons; they are not mislabeled as new reuse incidents. Externally invalid credentials receive the same generic 401. An already-expired family needs no additional reuse revocation because all its credentials are already unusable.
+
+The policy is strict, with no replay/grace window. Concurrent presentation of the same valid token has at most one successful rotation. The waiting request observes consumption, revokes that family and fails; the winner's replacement is consequently unusable. Other login sessions for the same user remain valid. This deliberately favors containment of theft over transparent retries. A lost refresh response or simultaneous tabs sharing a cookie may require login again. React StrictMode startup effect replay was a concrete duplicate source; AuthInitializer now issues only one startup refresh per mount. Cross-tab coordination is not implemented, and the server never trusts browser coordination as its enforcement mechanism.
+
+Retain consumed credentials for at least their session lifetime if adding a cleanup job later; deleting them early would turn detectable reuse into an unknown token. No cleanup scheduler is introduced in this phase.
+
+### Logout and migration behavior
+
+`revokeRefreshSession(sessionId, reason)` is reusable and idempotently revokes the family. Logout accepts even an older consumed credential to identify the current family, revokes only that session and clears the existing cookie with matching path/security attributes. Current access JWTs remain valid until their short expiry; no blacklist or Socket.IO architecture change is introduced. The userId index supports a future logout-all operation cleanly; no logout-all endpoint or device UI was added.
+
+The SQL is additive: CREATE TYPE/TABLE/INDEX plus ADD COLUMN/FOREIGN KEY only. It contains no DROP, DELETE, TRUNCATE or user-data rewrite. Existing tokens retain their data but have null sessionId and require login again. Actual production rows were not accessed; old-schema assumptions were verified against the existing migration and an isolated legacy-data fixture. Both fresh migration deployment and upgrade with a pre-existing user/token passed. A live Prisma schema diff against the migrated test database reports no difference.
+
+Deployment must apply the migration and move **all** auth-serving API instances to the new implementation together. Older binaries do not check session revocation, so mixed-version auth serving is not a safe rollout mode. No deployment is authorized/performed here.
+
+### Assignment authority, cleanup and race handling
+
+`assignment.policy.ts` centralizes assignable roles (OWNER, ADMIN, AGENT), assignment authority (OWNER, ADMIN) and active statuses (OPEN, IN_PROGRESS, WAITING). AGENT/CUSTOMER cannot assign or unassign. Ticket details expose canAssign for UI controls; the server independently checks authority. Existing OWNER membership protections and customer/tenant restrictions remain.
+
+Membership add/remove/role changes, assignment and real status transitions acquire the organization's row lock first, then query current actor/candidate membership within the transaction. The lock is FOR NO KEY UPDATE so unrelated foreign-key checks can proceed; READ COMMITTED is pinned so statements after a waiting lock see preceding committed membership changes. Both assignment and removal/demotion follow the same protocol. If assignment commits first, removal cleans it; if removal commits first, assignment sees the absent/ineligible member and fails. PostgreSQL locking applies across API processes; this is unrelated to Socket.IO's separately documented single-process limitation.
+
+Removal or an ineligible role change unassigns all active tickets and writes activity entries in the same transaction as membership mutation. Cleanup never changes ticket status. AGENT↔ADMIN changes retain assignment. RESOLVED/CLOSED retain the historical user reference (the existing foreign key targets User, not OrganizationMember). On reopening, the same locked transaction revalidates eligibility and unassigns with REOPENED_INELIGIBLE activity if needed. Manual/automatic assignment activity records oldAssigneeId, newAssigneeId and reason; display messages include a human-readable assignee name.
+
+Existing ticket snapshot predicates still return 409 for stale writes. The organization lock intentionally serializes these mutations per organization, trading throughput for a simple correctness boundary. This is not a claim of database-wide serializability: direct SQL, future mutation paths or maintenance jobs bypassing the protocol can violate the application invariant. Audit/remediate any pre-existing invalid active assignments before rollout; this phase does not inspect or bulk-rewrite production ticket data. No assignment-history table or new ticket FK is introduced.
+
+Lock semantics were checked against PostgreSQL's [row-lock documentation](https://www.postgresql.org/docs/current/explicit-locking.html#LOCKING-ROWS) and [READ COMMITTED documentation](https://www.postgresql.org/docs/current/transaction-iso.html#XACT-READ-COMMITTED).
+
+### Files changed
+
+- Schema/migration: `apps/api/prisma/schema.prisma`; `apps/api/prisma/migrations/20260926000000_refresh_sessions/migration.sql`.
+- Auth: `apps/api/src/common/utils/refreshToken.ts`; `apps/api/src/modules/auth/auth.service.ts`, `auth.controller.ts`, new `auth.security.ts`.
+- Membership: `apps/api/src/modules/organizations/org.service.ts`, new `org.transaction.ts`.
+- Assignment: `apps/api/src/modules/tickets/ticket.service.ts`, new `assignment.policy.ts`, new `assignment.service.ts`.
+- API tests: new `apps/api/src/__tests__/auth.session.test.ts`, `assignment.policy.test.ts`, `stage-c.integration.test.ts`; updated `ticket.service.test.ts`, `rbac.integration.test.ts`.
+- Client: `apps/client/src/features/auth/AuthInitializer.tsx`, new `AuthInitializer.test.tsx`; `apps/client/src/features/tickets/TicketDetailsPage.tsx`, `ticketsApi.ts`.
+- This engineering record. No dependency manifest/lockfile, Copilot, retrieval, message-persistence or realtime implementation changes.
+
+### Validation and limits
+
+- Prisma client generation, schema validation and empty schema diff against migrated PostgreSQL: passed.
+- Fresh migration deployment: all six migrations passed in a new isolated PostgreSQL 18.4 cluster at loopback port 55439. Separate legacy-upgrade schema preserved its user/token row exactly with null lineage. No development/production database was used. The isolated cluster was stopped after validation; local test logs and fixture SQL remain in the sibling supportiq-stage-c-test directory.
+- API infrastructure-free tests: **112 passed in eight suites**, with detectOpenHandles. These include the entire Stage B suite and Phase 1 regression checks.
+- PostgreSQL-backed tests: **45 passed in three suites** (existing auth, existing RBAC, new Stage C). New cases exercise strict refresh concurrency, descendant denial, session isolation, expiry/invalid states, production cookies, failed replacement INSERT rollback, assignment permissions, member removal/demotion, history/reopening, audit failure rollback and overlapping mutations. The overlap tests hold an organization lock until both service transactions are observed waiting in pg_stat_activity before releasing them. Prisma transactions are not mocked.
+- Local full integration execution uses a temporary Jest config outside the repository to stub **only the unrelated knowledge-processing queue**, because no isolated Redis instance was available. An initial run with the queue mapping in the wrong order failed; corrected mapping passed all suites without open-handle reports. Redis/knowledge-worker integration itself was not tested. CI retains the normal PostgreSQL + Redis configuration and discovers these tests without the local stub.
+- Client StrictMode regression: **2 tests passed** in Vitest/jsdom, including rejected refresh with no automatic duplicate.
+- Normal API build and normal client build: passed. git diff --check: passed. Frozen lockfile verification: passed offline with ignore-scripts/lockfile-only; lockfile unchanged. Existing ts-jest/TypeScript compatibility and ~572 kB client bundle warnings remain.
+- No automatic commit, push, merge, deployment or production seed. Git remains on `codex/supportiq-hardening` at `817bebb`, with Stage C changes only (12 modified files, nine new paths/files).
+
+This bounded Stage C session/assignment security work is complete subject to the documented rollout and Redis-validation limits; it is not a blanket claim that all P0 security/concurrency work is finished. The exact next recommended phase is **feedback/message atomicity + immutable Copilot/knowledge provenance**, before hybrid retrieval and evidence-policy redesign. That phase has not begun.
+
+
+## Stage D — Copilot decision integrity and provenance
+
+Implemented 2026-09-26 on codex/supportiq-hardening at 817bebb. Stage C and Stage D remain uncommitted and unpushed. Stage C's 21 changed/new files were preserved before Stage D in the sibling supportiq-stage-d-baseline directory with a manifest. No deployment, production migration or Stage E work was performed.
+
+### Decision transaction and immutable linkage
+
+Previously the browser sent a customer message and then separately upserted feedback, permitting partial success and overwritten decisions. AiDraftPanel now calls one send command: POST /api/v1/tickets/:ticketId/copilot-runs/:runId/send. It submits only finalMessage; the server derives ACCEPTED or EDITED. The existing evaluation endpoint is rejection-only and requires a reason. A staff-only GET on the run path exposes retained provenance and its linked decision/message within ticket/tenant authorization.
+
+The send transaction acquires the organization lock, rechecks current staff membership, locks the ticket and scoped run, checks terminal state and eligibility, compares the current selected-context fingerprint, then creates the public TicketMessage, MESSAGE_SENT activity, first-response update and CopilotEvaluation together. Any database failure rolls back all these durable writes. The ticket lock conflicts with message-insert foreign-key checks, preventing a concurrent public message from crossing context validation. READ COMMITTED is explicit. Only after commit does best-effort realtime notification run; notification failure cannot undo successful persistence. No automatic AI send was introduced.
+
+CopilotEvaluation retains its existing unique copilotRunId and gains a unique nullable messageId relation to TicketMessage. Thus one run has at most one terminal decision and one message cannot belong to multiple runs. Version-one accepted/edited decisions retain originalReply, actual finalMessage, evaluatorIdentity, timestamp and character counts; rejected decisions retain reason and have no message. Database checks/triggers verify the suggestion and message body/ticket/sender linkage. Run snapshots and decisions reject updates; linked message body/ticket/sender also reject updates. Existing nullable user FKs may clear when a user is deleted, while separate immutable identity scalars survive. These are update-integrity controls, not tamper-proof storage against a privileged database administrator or deletion; see retention below.
+
+The same actor retrying the same normalized text returns the original result (first send 201, replay 200), without another message, activity or notification. An identical rejection retries successfully. Different text, decision or actor returns 409. Concurrent send/send and send/reject requests serialize to one terminal result. Exact retries are checked before context staleness because the first successful message itself changes context. Legacy, abstained or changed-context runs cannot send; regenerate after 409. Staleness means a changed selected context, not an arbitrary time limit. Client duplicate-submit protection, terminal-state controls and ticket-keyed state supplement server enforcement; uncertain network failures allow retrying the same run.
+
+Whitespace policy strips only outer JavaScript whitespace. Internal spaces and line endings remain significant. The normalized submitted body is the actual persisted body. Character counts use JavaScript UTF-16 string length; they describe editing effort, not semantic correctness. Strict request schemas reject a forged disposition.
+
+### Bounded historical inputs and evidence
+
+The oldest-ten-message bug is fixed: select the latest ten using createdAt descending plus id descending as a deterministic tie-breaker, then reverse the selected subset into chronological prompt order. Snapshot inputs are the exact bounded context used: title (1,000 characters), description (12,000), status, priority, customer name (200), and up to ten message IDs, sender names (200), bodies (5,000) and timestamps. Unused profile/email/assignee fields are not copied. Tone and the effective normalized retrieval query (700) are included; SHA-256 of the selected context supplies stale-run comparison. Input/evidence shapes are validated with strict schemas before persistence.
+
+Existing sources JSON is extended rather than replaced: up to five ranked results retain document/chunk IDs, document name, chunk index, search type, score, citation label, excerpt, bounded content (12,000) and SHA-256 content hash. Bounds are applied before downstream generation/fallback consumes the content. The rendered prompt records the exact shortened evidence actually sent to providers; retained source content also supports explaining local fallback. Both requested and normalized retrieval queries are retained. Evidence survives KB chunk/document deletion or rebuild because these are text snapshots, not live foreign-key joins. Hashes identify captured content; they are not full immutable knowledge versions. Retrieval candidate pools and embedding-provider internals are not archived.
+
+### Versions, provider trace and outcome semantics
+
+Relational run fields include provenanceVersion, status, model, promptVersion, retrievalVersion, evidencePolicyVersion, generationPath, generationDurationMs and start/completion timestamps. JSON fields hold bounded inputSnapshot, promptSnapshot, outputSnapshot, generationConfig and providerMetadata. Current identities are support-copilot-v2, semantic-then-keyword-v1, legacy-v1, support-fallback-v1 and copilot-bounds-v1. The weak existing confidence/abstention and semantic-first/keyword-fallback behavior are preserved; legacy-v1 is not calibrated confidence.
+
+Rendered common and actual provider request prompts (including the OpenAI system prompt) are stored for exact historical inspection. This deliberately duplicates bounded customer data in the database; application logs never include these prompts or raw provider/storage errors. Successful generated text is retained before and after trim, separately from the displayed suggestion, including generated output suppressed by abstention. Model output is limited to 2,048 tokens; unusable empty or over-32,000-character provider responses fall back with a fixed failure reason rather than storing an unbounded payload.
+
+Provider adapters record Gemini/OpenAI requested model, returned model/version and token usage when supplied; absent metadata remains null. OpenAI temperature is 0.25; unspecified Gemini temperature remains null. Logical attempts record SKIPPED/FAILED/SUCCEEDED, sanitized reason and duration. SDK-internal retries and raw SDK response blobs are not retained. Outcome COMPLETED/ABSTAINED is independent of generationPath MODEL/LOCAL_FALLBACK; provider failure versus no configured provider is explicitly recorded. Local fallback has null model/output-token limit and its own template version. Provider-generation-skipped is recorded separately. Total duration includes authorization/context/retrieval/provider work through completion, but excludes history-persistence transaction time.
+
+CopilotRun and its required AI_REPLY_GENERATED activity commit together after provider work, with current membership revalidated. Provider failures that reach fallback are retained; failures before run construction (for example retrieval/database outage), or failure of the atomic history write, do not create a durable failed-run row. Explainability does not promise bit-identical model replay: provider aliases/defaults can change and generation is nondeterministic. No live external model calls were made during validation.
+
+### Migration, analytics, demo and retention
+
+Migration 20260926010000_copilot_history is additive: new columns, unique message index, FK, check and triggers. Existing Copilot runs/evaluations survive unchanged with provenanceVersion/integrityVersion zero, LEGACY status and unknown snapshot/link fields null. No historical prompts, actor identities or message links are fabricated. Legacy records remain readable and counted by existing dashboard queries; the one-evaluation-per-run shape, dispositions, rejection reasons and source identity fields are preserved. New send requires provenance version one. A legacy undecided run can still be rejected.
+
+Deploy migration and compatible API/client together. Older clients issuing standalone ACCEPTED/EDITED feedback receive validation failure; older server upserts cannot overwrite immutable records. No mixed-version compatibility bridge is introduced. Prisma schema diff cannot describe these custom triggers/checks; real database tests verify them.
+
+Recruiter-demo generation remains ephemeral (runId null), and send/reject remain blocked at route and service boundaries. Demo interactions consequently do not feed AI Quality history. Manual copying into the ordinary message composer does not infer a Copilot link; only the explicit atomic send command establishes authoritative linkage.
+
+Existing organization/ticket cascades can delete all associated runs/decisions. The product currently has no ticket-delete feature; a future delete feature must make retention explicit before exposing that cascade. Organization deletion is an intentional data-erasure boundary, tested with linked messages. Individual linked-message deletion is blocked by the NO ACTION FK; KB deletion preserves snapshots. User FK clearing preserves new actor identity scalars. Direct privileged deletion/maintenance can erase history; there is no indefinite-retention, redaction, archival, outbox or tamper-evident ledger system. Stored prompts/evidence require the same access control and future privacy/retention handling as customer support data.
+
+### Files and validation
+
+Stage D changes schema plus migration 20260926010000_copilot_history; AI controller/routes/schema/service; new ai.decision.ts, ai.provenance.ts, ai.provider.ts and ai.logging.ts; message.service.ts shared persistence/notification helpers; client AiDraftPanel.tsx and aiApi.ts; new ai.provenance.test.ts, ai.provider.test.ts, stage-d.integration.test.ts and AiDraftPanel.test.tsx; and this record. Stage C files remain preserved alongside these changes.
+
+- Prisma format, validate and generate: passed. All seven migrations deployed to a fresh isolated PostgreSQL 18.4 database and to the pre-Stage-D database with seeded legacy Copilot data. Legacy run/evaluation preservation assertions passed; migrated-schema diff reports no difference.
+- API infrastructure-free tests: 125 passed across ten suites, including Phase 1 and Stage B/C regressions.
+- PostgreSQL integration: 68 passed across four suites, including 23 Stage D cases. Coverage includes injected real INSERT failures for each durable component, generation/activity atomicity, exact and conflicting concurrent retries, send/reject races, stale/abstained/tenant/customer denial, DB linkage/update protection, user deletion identity retention, evidence surviving live context edits and KB deletion, provider/fallback traces, HTTP 201/200 behavior, demo guards and dashboard counts.
+- These tests use real Prisma transactions and PostgreSQL. Provider generation is mocked in integration tests; separate provider unit tests exercise adapter requests/metadata/failures. Realtime failure is injected to prove post-commit independence. As in Stage C, a temporary external Jest config stubs only the unrelated knowledge queue because isolated Redis is unavailable; Redis/worker integration is not covered.
+- Client tests: nine passed in two suites (seven Copilot flow tests plus two Stage C startup-auth tests). API TypeScript build and client TypeScript/Vite production build passed. Frozen lockfile validation passed offline with ignore-scripts/lockfile-only; no dependency changes. git diff --check passed. Existing ts-jest compatibility warnings remain; client output is about 573 kB before gzip.
+- Validation used only loopback isolated databases. Fixture SQL and logs remain in sibling supportiq-stage-d-test; the temporary PostgreSQL cluster is stopped after validation. No production data or services were changed.
+
+The Stage D quality bar is met for new persisted runs and the authoritative Copilot send/reject flow, subject to the legacy, deletion, external-provider and failure-record limitations above. Git remains at 817bebb on codex/supportiq-hardening with combined Stage C/D work uncommitted (19 modified files and 18 new files). No commit, push or deployment was performed.
+
+The exact recommended next phase is **Stage E — Evidence Policy v2 + Hybrid Retrieval**: measured retrieval/evidence fixtures, vector-plus-lexical retrieval, and deterministic evidence gating to replace the weak legacy logic. Stage E has not begun. Knowledge versions, Reliability Lab, object storage and broader analytics redesign remain later work.
+
+
+## Stage E — Hybrid retrieval and evidence policy v2
+
+Implemented 2026-09-26/27 in the authoritative codex/supportiq-hardening worktree at 817bebb. Stage C/D work was preserved in sibling supportiq-stage-e-baseline with a manifest before editing. This appendix supersedes Stage D's next-phase recommendation only; earlier engineering history remains intact. No commit, push, deployment, production migration or automatic knowledge reprocessing was performed.
+
+### Retrieval contract and query design
+
+The previous service returned semantic results whenever any existed; otherwise it used substring counts. Raw semantic percentages and keyword counts fed the same confidence thresholds, and providers ran before abstention. The replacement always attempts semantic and lexical candidate retrieval for a nonempty query, independently records failures, fuses their ranked lists and evaluates evidence before generation.
+
+buildRetrievalQuery deterministically reserves up to 200 characters for title, 250 for the latest customer message within the selected latest-ten context, and 250 for description; whitespace is normalized and the final query is bounded at 700. Agent messages are excluded from customer-fact extraction. The Stage D context snapshot now includes an isCustomer marker derived from the ticket's customerId, not a guessed sender name. The actual resulting query remains in the existing immutable run snapshot. No query-generation LLM is involved. A customer message older than the latest-ten window is not included; this is an explicit bounded-context limitation.
+
+kb.lexical.ts isolates parameterized PostgreSQL FTS SQL. English stemming and stopword removal produce query lexemes; quoted lexemes are OR-combined for recall, then ts_rank_cd ranks matches in the database with chunk-ID ties. Coverage separately measures the fraction of query lexemes present in each returned chunk. Pure numeric/date literals and a small explicit generic-support-word list do not drive topical coverage; the original values remain in the recorded query/context. This fixed an integration case where supplying an order number and date accidentally weakened otherwise relevant policy evidence. Numeric-only queries are consequently not supported lexical searches; alphanumeric identifiers such as ERR42 remain searchable. This is English retrieval, not multilingual search.
+
+Both SQL paths filter KnowledgeChunk.organizationId AND KnowledgeDocument.organizationId and require document status READY. This also rejects inconsistent cross-tenant parent/child rows. Existing staff-only KB routes and demo write guards remain unchanged. Queries return bounded top-20 candidate sets, with document data joined in SQL; the application does not load/rank the entire KB or perform per-document fetches. Empty hybrid queries return empty results without embedding calls.
+
+kb.vector.ts retains exact cosine-distance pgvector retrieval at 1,536 dimensions, orders by distance then chunk ID, and records raw distance and similarity (1-distance). Neither is a probability. Embedding vectors must have the expected dimension, finite values and nonzero magnitude. Embedding calls use a bounded ten-second timeout with SDK retries disabled. Logs contain fixed event names rather than raw provider/SQL errors. Missing configuration, embedding failure, vector-query failure and missing embeddings are distinct states. Vector similarity quality gates occur in the evidence policy, not an arbitrary percentage display.
+
+### Fusion, deduplication and diversity
+
+kb.retrieval.ts defines top-20 candidates per modality, RRF k=60 and up to five final retrieved chunks. RRF sums 1/(60+rank) across modalities; raw FTS and cosine scores are never compared to one another. k=60 is a deliberately untuned baseline that moderates rank differences; candidate bounds keep at most forty entries in memory and snapshots. Stable chunk IDs merge modality hits, repeated IDs within a list contribute only once, and fused ties use a deterministic ID comparison. Candidate fusion rank and selected rank are explicit.
+
+Normalized lowercase/whitespace SHA-256 content hashes eliminate exact repeated text. The final selection allows at most two chunks per document, so adjacent chunks cannot act as five independent sources. It does not force unrelated documents into the result or require multiple documents to answer. Independent document count and chunk count are recorded separately. Overlapping but non-identical chunks are not semantically deduplicated; document caps and count-independent evidence rules limit their influence.
+
+Selected-result provenance retains semantic/lexical ranks and raw scores, semantic distance, lexical coverage, fused score, matchedBy and final rank. Candidate diagnostics retain the bounded ranked identities and normalized deduplication hashes. Existing Stage D sources retain raw-text hashes, exact bounded evidence text and an evidenceEligible flag. Thus weak retrieved evidence remains inspectable even when excluded from the prompt. Only eligible evidence enters the generated prompt/local fallback. The two hash purposes are distinct: source contentHash covers the captured text; candidate contentHash covers normalized text used for deduplication.
+
+### Deterministic evidence rules and fixture selection
+
+The dedicated evidence-policy.ts returns decision, reason, evidence strength, eligible evidence, missing facts, warnings and generationAllowed. Chunk quantity never increases strength by itself. A chunk qualifies through any of these explicit rules:
+
+- Semantic similarity at least 0.82; or
+- Lexical coverage at least 0.60 with a lexical result; or
+- Semantic similarity at least 0.65 AND lexical coverage at least 0.35.
+
+STRONG requires meaningful support from both modalities on at least one eligible chunk. Otherwise eligible evidence is LIMITED; no eligible evidence is INSUFFICIENT. The existing database LOW/MEDIUM/HIGH enum is retained solely as a compatibility projection of those levels, not an answer probability. The UI now labels these values Evidence: Insufficient/Limited/Strong, removes source-score displays from the draft panel, and shows ranked results in KB search. Abstention displays the actual reason rather than incorrectly calling every case missing knowledge.
+
+Thirty named deterministic fixtures cover exact policies/identifiers, semantic paraphrases, weak overlap, duplicate chunks, one useful result amid noise, source agreement, narrow conflicts, empty KB, each degraded modality, missing/supplied customer facts, ambiguous queries and threshold boundaries. All thirty pass. Initial boundaries separate the fixture examples: semantic-only 0.80 is rejected while 0.84 is accepted, lexical coverage 0.55 is rejected while 0.65 is accepted, and agreement cases straddle the 0.65/0.35 cutoffs. A fixture sweep demonstrates that lowering the semantic-only threshold to 0.60 admits known fixture negatives.
+
+These are deliberately constructed regression fixtures with supplied semantic scores, not a measured production embedding corpus, blinded benchmark or calibrated confidence model. Real PostgreSQL tests separately verify lexical tokenization/ranking/coverage. Live embedding relevance and threshold generalization remain unvalidated; these constants are provisional, conservative policy choices constrained by the fixtures. Changes to embedding models/domains require a representative evaluation set and a policy-version change rather than treating these numbers as universal. No LLM reranker or production-quality calibration claim is made.
+
+### Gating, clarification, conflicts and degradation
+
+ANSWER_SUPPORTED is the only decision that permits generateWithProviders and its existing Gemini -> OpenAI -> local-template fallback chain. INSUFFICIENT_KNOWLEDGE, NEEDS_CUSTOMER_INFO, CONFLICTING_KNOWLEDGE and RETRIEVAL_DEGRADED all persist a run with null suggestion/output, generationPath SKIPPED_EVIDENCE and providerCallAttempted false. The rendered prompt is retained as the planned context, while requests is empty to make clear it was not sent. Four service-level gating tests explicitly assert no provider call and no customer-facing fallback. An embedding request for retrieval is distinct from a generation-provider request.
+
+Healthy retrieval with no qualifying evidence means INSUFFICIENT_KNOWLEDGE. Any incomplete/unavailable modality with no qualifying evidence means RETRIEVAL_DEGRADED, avoiding a false clean knowledge miss. A working modality with sufficient evidence may still answer with a reduced-coverage warning. Both modality statuses/latencies, overall latency, candidate/fused counts, missing embedding count where knowable, unique documents and selected chunks are persisted in Stage D providerMetadata; the evidence decision/level/reason are also persisted in outputSnapshot. Versions are hybrid-rrf-v1, evidence-v2 and support-copilot-v3. Historical strings/records are not rewritten.
+
+Customer clarification is intentionally narrow: explicit require/required/requires/must-provide phrases can identify order number and purchase date requirements; bounded customer text is checked for those facts. Missing facts block generation and are distinct from missing KB. The policy is not a general information-extraction system. Clearly different explicit refund windows in days across selected documents block generation; arbitrary semantic contradictions, plan applicability, negation and policy effective dates are not reliably understood. No freshness/version metadata exists yet to resolve competing sources automatically. Human review remains necessary even for ANSWER_SUPPORTED.
+
+Provider failure after an allowed generation retains the Stage D operational failure/fallback trace; abstention cannot fall through to a generic customer reply. Dashboard metrics preserve legacy records and dispositions, while evidence-v2 RETRIEVAL_DEGRADED and NEEDS_CUSTOMER_INFO runs are excluded from KB-gap signals. Broader source-quality/gap analytics are deferred. Pending Stage D runs use their original context-fingerprint shape so the new isCustomer marker alone does not invalidate them. Atomic send, immutable decisions and exact retries remain unchanged.
+
+### Database provisioning and processing completeness
+
+Migration 20260926020000_hybrid_retrieval adds a GIN index on the exact to_tsvector('english',content) expression and nullable KnowledgeDocument.semanticIndexedChunks. Legacy null means unknown, not zero. Processing clears the count and records actual successful embeddings while READY means lexical content is usable. When semantic querying is available, the database counts READY chunks lacking vectors and reports INDEX_INCOMPLETE instead of a clean semantic miss. With an unconfigured/failed provider, coverage is explicitly unknown and the subsystem is degraded. No automatic re-embedding/backfill occurs.
+
+Runtime extension/column DDL is removed. The migration provisions pgvector and the existing embedding vector(1536) column only if the server has the extension installed/available. A deployment with available pgvector needs extension/DDL privileges for migration; errors are not silently ignored. A database without the installed extension receives FTS and remains explicitly lexical/degraded. After an operator later installs pgvector, prisma/operations/enable-knowledge-vector.sql supplies the same idempotent provisioning outside requests. The vector column remains SQL-managed, as before; no approximate index is added for this small exact-search deployment. Increasing scale will require measured vector-index design. Embedding ingest/query model configuration must remain consistent; this phase does not version or migrate legacy embedding models.
+
+Compose and CI now use the documented pgvector/pgvector:0.8.6-pg16 image instead of plain PostgreSQL 16. CI sets SUPPORTIQ_TEST_PGVECTOR=1, making the real-vector SQL test mandatory. The local PostgreSQL 18.4 installation has no vector extension and cannot execute that test. No container image was deployed/pulled here. Existing Alpine-origin database volumes should be backed up and compatibility/collation checked before operators change their database image. Production hosting/extension privileges were not accessed. The FTS index is a normal migration index build; plan a maintenance window on large write-heavy tables rather than assuming zero-lock online creation.
+
+Design references: [PostgreSQL FTS parsing/ranking](https://www.postgresql.org/docs/16/textsearch-controls.html) and [pgvector distance/provisioning and supported images](https://github.com/pgvector/pgvector). The implementation uses built-in English text search and exact vector queries; no Elasticsearch or external vector store was added.
+
+### Validation, performance and remaining limits
+
+- Prisma format/validate/generate passed. All eight migrations applied to a fresh isolated database; Stage D and seeded legacy databases upgraded successfully. Two pre-existing Copilot runs and evaluations compared byte-for-byte unchanged across the Stage E migration. No historical data rewrite or knowledge reprocessing was performed.
+- API unit tests: 168 passed in thirteen suites, including thirty policy fixtures, service-level generation gates, independent retrieval failure behavior, fingerprint compatibility, prior security and lifecycle regressions.
+- PostgreSQL integration: 78 passed in five suites, one explicitly skipped local pgvector test. Ten new real-PostgreSQL Stage E cases cover FTS ranking/stemming/stopwords/identifier handling, tenant/status filters, parameter safety, lexical retrieval during embedding failure, provenance, provider gating, customer clarification, explicit conflicts, customer-only query context and the FTS index. Stage C/D transaction tests remain included. External generation/embedding calls are mocked; database transactions and FTS SQL are real.
+- The vector test is committed and required in CI: it uses real vector SQL with synthetic orthogonal vectors to test ordering, tenant filtering, fusion and incomplete coverage. It has NOT been executed locally, and CI has not been run/pushed. Neither mocked semantic fixtures nor synthetic vectors establish real embedding relevance. The available local environment therefore validates the lexical/degraded path, not the full deployed hybrid path.
+- As in Stage C/D, local integration uses the external temporary Jest config to stub only the unrelated knowledge-processing queue because isolated Redis is unavailable. Queue/worker integration remains untested.
+- Ten client tests passed, including evidence terminology and specific abstention reason display, along with Stage D retry/terminal controls and Stage C startup auth.
+- API TypeScript and client TypeScript/Vite builds passed; frozen lockfile validation passed offline without dependency changes. Existing TypeScript/ts-jest compatibility and approximately 572 kB client bundle warnings remain. git diff --check passed after removing one trailing blank line.
+- EXPLAIN (ANALYZE, BUFFERS) on a rollback-only fixture of 10,000 chunks (100 matching) used KnowledgeChunk_content_fts_idx, a bitmap heap scan and top-N sort. It returned twenty rows in approximately 3.6 ms execution plus 3.4 ms planning locally. This is one warm synthetic query, not a production latency guarantee. Its JSON plan is in sibling supportiq-stage-e-test/fts-explain.json. No local vector query-plan measurement is possible without pgvector.
+- Logs, migration comparisons and fixture artifacts are retained in supportiq-stage-e-test. Only isolated loopback PostgreSQL was used; the temporary cluster is stopped after validation.
+
+Stage E changes 29 paths relative to the saved Stage D baseline: migration and optional provisioning SQL; schema; kb.retrieval/lexical/hybrid/vector/service/processing; evidence-policy and AI service/provenance/decision compatibility; dashboard; client draft/search components and their API types; CI/Compose; gating, policy, retrieval-health, provenance, Stage D/E integration and client tests plus the thirty-fixture file; and this appendix. No earlier-stage work was discarded.
+
+This bounded implementation is complete with the explicit pgvector execution, live-embedding calibration, English-only rules, narrow conflict/fact detection and Redis-validation limits above. No Stage F work was started. The exact next phase is **Stage F — Immutable Knowledge Versioning + Publication Provenance**, making historical Copilot evidence traceable to immutable published knowledge and preparing replay-based evaluation. Before deployment, run the mandatory pgvector-enabled CI suite and assess initial policy constants against representative embedding results; neither has been claimed complete here.
+
+## Stage F — Immutable knowledge versions and publication provenance
+
+Implemented and validated 2026-09-27/28 in the authoritative `codex/supportiq-hardening` worktree at `817bebb2fed91d7437fefc85cb94eb9da11f3829`. The sibling `supportiq-stage-f-baseline` preserves the 56 dirty/new files present before this phase, with a manifest. Earlier Stage C–E work remains intact and uncommitted. This appendix supersedes Stage E's next-phase recommendation; earlier appendices remain historical records. No commit, push, deployment, production migration or Stage G implementation occurred.
+
+### Domain and product decision
+
+Previously, a logical KnowledgeDocument owned mutable chunks and reprocessing deleted/recreated them. The domain is now KnowledgeDocument → KnowledgeDocumentVersion → KnowledgeChunk. The document retains its identity, compatibility metadata and a `currentPublishedVersionId`; it also has `archivedAt` and a server-managed next-version counter. Each version owns upload metadata, an opaque storage reference, uploader identity, timestamps, source/extracted-text hashes, extracted text, processing state, embedding completeness/model and its own chunks. Chunk IDs and version IDs are separate identities. Embeddings remain SQL-managed vector columns on version-owned chunks.
+
+**Every new version, including v1, requires explicit OWNER/ADMIN publication.** Uploading and successful processing never immediately change production evidence. This gives administrators one understandable prepare → publish workflow and a staging boundary for later evaluation. Staff can read version history; customers cannot access the KB or provenance endpoints. Existing organization authorization and demo guards remain, with fresh role checks under the organization lock for mutations. No AI suggestion is automatically sent.
+
+The lifecycle is `UPLOADED → PROCESSING → READY → PUBLISHED → SUPERSEDED`, with `FAILED` and explicit processing retry for unsuccessful unpublished versions. READY means extraction/chunking succeeded and lexical retrieval is usable. Zero or partial embeddings are represented explicitly and remain publishable under Stage E's degraded-retrieval policy. Published versions are never reprocessed; changing them requires a new upload. Previously published content remains retained when superseded.
+
+### Creation, processing and concurrency
+
+Creation locks the organization and existing logical document, allocates `nextVersionNumber`, creates the version, increments the counter and writes activity in one transaction. A database unique constraint on `(documentId, versionNumber)` and a positive-number check provide additional enforcement. Concurrent distinct uploads receive unique monotonic numbers; numbers are not supplied by clients or recycled after maintenance deletion.
+
+SHA-256 covers exact uploaded bytes, normalized extracted text and each chunk's exact content. Processing verifies the stored source hash and parses that same in-memory byte buffer, avoiding a second file read between verification and extraction. Upload filenames use UUIDs. An identical source hash within the same logical document returns the existing version without creating chunks or repeating completed embedding work. This includes prior superseded versions: an identical historical upload does not create a new rollback publication. A changed file whose extracted text is identical can still create a version; cross-version chunk embedding reuse is deferred. Legacy/seed source bytes remain explicitly unknown rather than guessed.
+
+Workers receive an explicit version ID and claim a 30-minute lease with a unique processing token under the document lock. Chunk creation, completion and failure transitions verify that token. Embedding writes also require the owning unpublished version and matching token. A stale worker cannot overwrite a reclaimed attempt's chunks, mark its result FAILED or alter a publication. The race test pauses one worker, rejects a duplicate active lease, expires/reclaims the lease, completes the new attempt and proves the old completion leaves READY/chunks unchanged.
+
+Processing touches only the target unpublished version. A failed replacement leaves the current pointer and its chunks untouched. Completion/failure and upload activities retain document/version/number/actor/transition without logging content; worker activities have no interactive actor. The installed pdf-parse v2 adapter now uses PDFParse/getText/destroy, loaded only for PDF input; TXT/Markdown parsing does not eagerly load its native dependencies.
+
+### Publication and database invariants
+
+Publishing locks and reauthorizes the organization/document, validates the target version and requires the caller's observed `expectedCurrentVersionId`. In one transaction it supersedes the previous publication, publishes the READY target, changes the current pointer and records both transitions. Concurrent different publications from the same observed pointer produce one success and one 409. Repeating the already-current target is idempotent; publishing an older numbered version is rejected. An injected activity INSERT failure rolls back the pointer and both version states.
+
+A partial unique index allows at most one PUBLISHED version per document. Deferred constraint triggers ensure a non-null current pointer refers to that document's PUBLISHED version after the transaction. Application transactions enforce the full transition and required audit; the constraints are not a replacement for the service authorization layer. The database also rejects changes to published version metadata/content and published chunks, including embeddings; it allows only the PUBLISHED → SUPERSEDED status transition. Version identity, number, source hash and storage reference are immutable from creation. Chunk triggers check matching document/organization/version and content hash and lock their parent against concurrent publication.
+
+Published/superseded versions and their logical documents cannot be hard-deleted while their organization exists. Unpublished, unreferenced versions can be deleted by maintenance; there is no new draft-delete API. Organization deletion remains the existing explicit whole-tenant erasure boundary, including retained knowledge and Copilot history. The corrective migration `20260927011000_knowledge_source_cascade` makes the two source-link retention FKs deferred: integration exposed otherwise-valid whole-organization cascades checking nested deletion order too early. This preserves standalone deletion protection while allowing the existing erasure transaction. Its behavior passed the full integration cleanup, including runs with linked knowledge.
+
+### Current retrieval and historical provenance
+
+`kb.scope.ts` captures active published version IDs once per hybrid request. Semantic candidates, lexical candidates and embedding-coverage counts use the same organization/archive/version predicate and scope. Production routes cannot accept arbitrary version overrides. A new request sees the new publication after commit. A request already in flight can finish against its captured previous publication; both modalities stay on that same as-of-start version set instead of mixing publications. Archive checks remain in each query, so archival may remove a captured source during the request. No draft or merely READY version is visible. The internal scope boundary permits a later evaluation implementation without exposing historical overrides now.
+
+New Copilot evidence snapshots retain all Stage D/E text, hashes, eligibility and ranking metadata and now include `documentVersionId`, `versionNumber` and `publishedAt`. Retrieval metadata is `hybrid-rrf-published-v2`; `evidence-v2`, prompt behavior, RRF and generation gates remain unchanged. New `CopilotKnowledgeSource` rows link every persisted retrieved source snapshot (including ineligible diagnostic candidates) to its chunk and version in the same run/history transaction. Database checks enforce published source lineage and tenant matching. Immutable snapshots remain alongside relational links.
+
+The tenant-authorized service `resolveCopilotKnowledge` and staff endpoint `GET /api/v1/organizations/:orgId/kb/copilot-runs/:runId/sources` resolve historical title/version/publication/chunk identity and return the original snapshots, current version, archive/current flags, source/text-change indicators and counts of distinct chunk hashes added/removed. These counts are a simple set comparison, not an ordered text diff or semantic comparison. Legacy runs have no invented relational linkage; `legacyVersionUnknown` distinguishes them from new runs with legitimately no evidence. Existing document-level source-quality aggregation remains compatible; the analytics redesign is deferred.
+
+### Routes and client behavior
+
+Existing `POST .../kb/documents` creates a document plus v1. `POST .../kb/documents/:documentId/versions` uploads a replacement under the same identity. Version history, explicit version processing and explicit version publication are available under that document. Publication requires `{ expectedCurrentVersionId: string | null }`. Existing `DELETE .../kb/documents/:documentId` now archives rather than destroys knowledge: normal lists/retrieval exclude it while staff can resolve its historical provenance. Restore and an archive-management UI are not introduced.
+
+The KB list shows current publication number/date and latest staged status. Expandable history shows retained versions; OWNER/ADMIN can upload replacements and publish READY versions. Publication conflicts are shown without silently retrying against a newer pointer. Latest UPLOADED/FAILED attempts offer processing retry. The backend can explicitly retry an expired PROCESSING lease; automatic lease recovery and a specialized stalled-job UI remain deferred. Copilot source cards carry their captured version number. Raw chunks/embedding internals are no longer the default document view.
+
+### Migration and preservation
+
+`20260927010000_knowledge_versions` is additive except for replacing the old per-document chunk-index uniqueness with per-version uniqueness. It creates deterministic `legacy-version-<documentId>` version-1 IDs, attaches every existing chunk without changing its ID/content/vector, and initializes the next counter to 2. Existing READY documents with chunks become current PUBLISHED v1; READY without chunks becomes FAILED; FAILED stays FAILED; UPLOADED/PROCESSING become UPLOADED and require explicit requeue. Old queue payloads without a version ID are rejected, never guessed.
+
+SQL cannot recover original file bytes or a trustworthy historical publication event. Migrated `sourceHash` and `extractedText` are null. The migrated content hash covers ordered newline-joined stored chunks, which is not necessarily the original extraction because chunk overlaps may exist. Migrated `publishedAt` uses the prior document `updatedAt` as a legacy proxy, **not an attested original publication time**. New publications have actual transition timestamps and source/text hashes. No old Copilot snapshots, decisions or evidence-policy version strings are rewritten; old chunk IDs are not sufficient evidence to guess what an earlier run used.
+
+All ten migrations are applied in the fresh isolated database. A repeatable integration test builds the actual pre-F migration chain in a fresh temporary schema, seeds legacy statuses/chunks/run/evaluation/message records, applies both F migrations, and explicitly compares unchanged IDs/content/history and status mappings. It additionally checks exact vector preservation when CI requires pgvector. Independent before/after comparisons against the representative legacy database verified **4 documents, 4 chunks, 2 Copilot runs, 1 evaluation and 5 messages**, including every original column/snapshot, plus all four new chunk/version relationships. No re-embedding was required.
+
+Seed helpers now construct synthetic versioned publications transactionally; seed file-byte hashes remain unknown. Seed reset uses the existing organization-erasure boundary rather than trying to destroy retained publications individually.
+
+### Validation and retrieval performance
+
+- Prisma format and validate passed. Generate passed after the integration process released its Windows engine DLL (the initial concurrent attempt hit a file lock). API TypeScript build and client TypeScript/Vite production build passed.
+- API unit tests: **168 passed / 13 suites**. PostgreSQL integration: **96 passed / 7 suites, 2 explicitly skipped local vector cases**. The final migration-only rerun also passed after replacing deprecated concurrent queries on one pg client with sequential reads.
+- Stage F integration covers concurrent version allocation/publication, hash duplicates/tampering, staging, failure preservation, zero embeddings, publication readiness, activity rollback, shared retrieval scope, historical links/snapshots/comparison, archive, immutable-row protection, permissible failed-version maintenance deletion, upload HTTP identity, customer/tenant/demo denial, worker lease fencing and queue-failure persistence. Prior C/D/E regression suites remain included.
+- Client: **14 tests passed / 3 suites**, including version history/publication pointer, visible conflict, same-document replacement upload and staff-only controls. A first local worker startup timed out before executing tests; a single-thread-worker retry and final run passed. A separate real minimal PDF smoke test passed against the installed PDFParse v2 and compiled extraction helper.
+- Frozen lockfile validation passed offline with ignore-scripts/lockfile-only; dependencies and lockfile were not changed. `git diff --check` passed. Existing Prisma configuration deprecation, ts-jest/TypeScript compatibility and ~574 kB client-bundle warnings remain.
+- Real pgvector is unavailable on the local PostgreSQL 18.4 installation. **Both Stage E and Stage F vector integration tests remain mandatory under `SUPPORTIQ_TEST_PGVECTOR=1` in the pgvector CI service**, as does the migration's vector-preservation assertion. They have not run locally or in remote CI during this no-push phase. Synthetic vectors validate SQL lineage/filtering, not live embedding relevance.
+- Local integration uses real PostgreSQL/Prisma, transactions, migrations and FTS. The external Jest configuration still substitutes the unrelated Redis queue; Stage F explicitly mocks enqueue success/failure and embedding writes while exercising actual extraction/chunk persistence. BullMQ transport/worker lifecycle and live providers remain unvalidated.
+- A rollback-only **10,000-chunk / 100-match** fixture measured the production lexical SQL with version joins. After clearing the GIN bulk-insert pending list, three warm executions were **2.184 / 2.009 / 2.063 ms**, versus **1.673 / 1.588 / 1.649 ms** for the same query without version joins/predicates. The versioned plan used the FTS GIN index together with document/version indexes and returned 20 rows. Initial planning was 5.261 ms, then ~0.7 ms. The freshly inserted, unmaintained fixture initially chose a document-index scan filtering 9,900 rows and took **69.5 ms**; GIN pending-list/statistics maintenance materially affects that plan. These are local synthetic measurements, not a production SLA or proof for all tenant sizes. Vector query plans and very large publication-ID sets remain unmeasured.
+- Test logs, migration snapshots, before/after file inventory and query plans/scripts are retained in sibling `supportiq-stage-f-test`. Only isolated loopback databases were used; the temporary PostgreSQL cluster is stopped after final validation.
+
+### Limits, changed areas and next phase
+
+Local source files remain on disk behind a storage reference; UUID uploads and application rules prevent overwrite, but privileged filesystem changes are outside database immutability. Extracted text/chunks/snapshots are retained in PostgreSQL. Duplicate/rejected uploads can leave unused local files; cleanup/object storage is deferred. Queue enqueue is deliberately outside the upload transaction: an unavailable queue returns a recoverable error with the version still saved, requiring retry. There is no outbox, automatic expired-lease sweeper, distributed ingestion protocol, malware scan, replay, semantic diff or rollback-to-old-publication workflow. Long jobs can exceed the 30-minute lease and duplicate compute on reclaim, but fencing protects persisted state. Version history and captured publication-ID sets are not yet paginated for large installations.
+
+Stage F changes **36 paths relative to the saved Stage E baseline**, including this appendix: schema, two migrations, seed/helper; shared hash; version/processing/queue/upload/parser/service/controller/routes; shared retrieval scope and semantic/lexical/hybrid contracts; Copilot provenance/linkage/resolution; KB list/history/upload and Copilot source UI/API types; Stage F/migration/client tests plus necessary Stage D/E/retrieval fixtures. The exact path inventory is in `supportiq-stage-f-test/changed-files.json` (documentation is included at completion). Previous security, feedback, ticket and analytics work remains present.
+
+The Stage F quality bar is met for the locally validated lexical/degraded path: publishing v2 changes future retrieval while old runs keep exact v1 content/identity, and failed replacement processing leaves v1 serving. Full deployed hybrid-path validation still requires the mandatory pgvector-enabled CI suite and the existing external-provider/Redis checks; no broader production-readiness claim is made. Git remains on `codex/supportiq-hardening` at `817bebb`, with the combined Stage C–F delta uncommitted: 36 modified tracked files, 39 untracked files, and nothing staged.
+
+The exact recommended next stage is **Stage G — Knowledge Issues + Source Health + AI Quality Analytics**: turn existing failure signals into persistent, tenant-scoped operational knowledge issues tied to immutable document versions, with explicit issue lifecycle and version-aware source health. Preserve existing feedback/provenance/evidence gates; replay verification and Reliability Lab remain later phases. **Stage G has not begun.**
+
+## Stage G — Knowledge Issues and AI quality intelligence
+
+Implemented and validated 2026-09-28 on the authoritative `codex/supportiq-hardening` worktree at `817bebb2fed91d7437fefc85cb94eb9da11f3829`. Before editing, the 75 accumulated dirty/new Stage C–F files were copied to sibling `supportiq-stage-g-baseline` with a manifest. Earlier appendices remain historical records. No commit, push, deployment, production migration or Stage H implementation occurred.
+
+### Baseline findings and preserved systems
+
+The prior dashboard loaded all organization Copilot runs into application memory, grouped gaps by a lowercased topic, counted repeated chunks as source uses and treated any edit/rejection as negative evidence against every retrieved document. This phase replaces that runtime aggregation with the shared quality service used by both the existing dashboard and the new AI Quality area. Existing ticket dashboard behavior, Copilot runs/decisions, immutable snapshots, knowledge publications, evidence-v2 and generation gates remain authoritative. Compatibility dashboard percentage fields retain their previous integer rounding; the new quality API returns explicit rate objects with one-decimal percentages.
+
+Inspection also found a concrete Stage F regression: the hybrid function captured a publication scope but its lexical helper call omitted that scope, while the semantic helper received it. The lexical call now receives the same scope, and the regression test asserts both helper arguments. This fixes publication consistency rather than redesigning Stage F. Previous direct-helper scope tests had not caught the missing hybrid call argument.
+
+### Signal taxonomy and conservative classification
+
+`issue.classification.ts` is the independently tested deterministic domain classifier, version `knowledge-signal-v1`. It separates human feedback, policy outcomes and recorded operational failures. The SQL facts used by analytics implement the same classification rules and are parity-tested against the pure classifier. Analytics derive from immutable runs/evaluations directly, so a missed issue-ingestion attempt does not reduce quality failure counts.
+
+- Explicit EDITED/REJECTED feedback with WRONG_KNOWLEDGE, INSUFFICIENT_KB, IRRELEVANT_EVIDENCE or UNSUPPORTED_CLAIM qualifies. ACCEPTED does not become a failure even if legacy data has an inconsistent reason.
+- Evidence-v2 abstentions with INSUFFICIENT_KNOWLEDGE or CONFLICTING_KNOWLEDGE qualify. Their deterministic policy classification takes precedence over later feedback on that same abstained run.
+- NEEDS_CUSTOMER_INFO and RETRIEVAL_DEGRADED are explicitly excluded, including when inconsistent human feedback is attached. BAD_TONE, MISSING_CUSTOMER_CONTEXT, INCORRECT_RECOMMENDATION, INCOMPLETE_RESPONSE, OTHER and an unexplained edit do not independently establish a knowledge problem.
+- Legacy abstention alone is not sufficient evidence of a KB defect. Legacy explicit qualifying feedback can still create an issue, without inventing source-version identity.
+- Recorded embedding/vector/lexical failures and failed generation-provider attempts are counted as operational signals, not automatic Knowledge Issues. Provider failure alone cannot create a knowledge failure. A genuine explicit human knowledge diagnosis and an operational event may coexist on a supported run; their counts are not mutually exclusive. Socket/network failures and errors that never persisted a run are outside these historical analytics.
+- NOT_CONFIGURED and other retrieval coverage statuses are separately visible in the retrieval-health breakdown; they are not all mislabeled as provider exceptions. All deterministic policy outcomes, including degradation and clarification, have separate distribution counts.
+
+### Persistent issue domain, grouping and counts
+
+The additive schema introduces KnowledgeIssue, KnowledgeIssueSignal, KnowledgeIssueSource and KnowledgeIssueHistory. An issue owns workflow state, an optimistic revision, tenant/grouping key, normalized topic/title, classification reason, current staff membership assignment, candidate knowledge version, fix note and publication/dismissal metadata. Signals link to immutable CopilotRun records and therefore their ticket and terminal evaluation. Source links reference verified Stage F version lineage. History is a separate internal table, not customer-facing ticket activity.
+
+A unique `copilotRunId` permits **one qualifying knowledge signal per run**, independent of how many chunks it retrieved. The initial deterministic abstention classification remains stable if that run later receives a terminal decision. A supported run becomes eligible for a signal when qualifying terminal feedback arrives. Signal rows carry classifier version, reason, the run's creation timestamp and actual ingestion timestamp.
+
+Grouping is tenant + SHA-256 of classifier version, failure category, normalized full topic and sorted selected source-version identities. Topics are NFKC-normalized/lowercased with punctuation/noise and whitespace cleanup; common greetings are removed while product identifiers, numbers, hyphens, underscores and internal periods are retained. An empty normalized topic uses run identity to avoid merging unknown problems. The current structured topic originates from the ticket title, so this remains conservative lexical grouping, not semantic understanding. Different identifiers, source versions, failure categories, wording or source combinations remain separate. This deliberately under-merges rather than guessing that different failures are the same problem. There is no LLM clustering call.
+
+Source snapshots only establish source links after matching the run's immutable CopilotKnowledgeSource relationships. Legacy/malformed/unselected source claims cannot create guessed relational provenance. The issue's reason is common to its group rather than a synthetic weighted dominant-reason score.
+
+Counts are **derived from signal/run relationships**, not permanently incremented counters: `signalCount` is the number of linked runs; `affectedTicketCount` is distinct ticket IDs. First/last seen correspond to the earliest/latest run creation time. Issue creation and history timestamps separately record when detection/workflow actions actually occurred. Severity is transparent and lifetime-based: LOW for 0–2 affected tickets, MEDIUM for 3–5, HIGH for 6+. Repeated experiments on one ticket do not increase severity. Lists rank distinct tickets first, then signals and last seen; no probability or causal risk score is claimed.
+
+### Lifecycle, assignment, proposed fixes and publication
+
+The pure policy permits DETECTED → REVIEWING → FIX_PROPOSED → PUBLISHED. Active states can be dismissed; FIX_PROPOSED/PUBLISHED/DISMISSED can return to REVIEWING. Arbitrary jumps are rejected. `VERIFIED` exists in the database for the future verification service but no current transition/API/UI can set it. Publication is explicitly not verification.
+
+OWNER/ADMIN mutations take the organization lock, recheck current role/demo restrictions and require `expectedRevision`. Concurrent conflicting commands yield one success and one 409. Issue mutation and its required internal history entry commit together; an injected history INSERT failure proves status/assignment/revision rollback.
+
+Assignments accept only current OWNER/ADMIN/AGENT membership in the same tenant. Membership demotion/removal clears issue assignment and records ASSIGNMENT_REVOKED inside the existing membership transaction, using the same organization lock as assignment. This extends Stage C consistency to the new domain. Read-only agents can inspect issues and analytics; customers cannot.
+
+FIX_PROPOSED requires a same-tenant, non-archived, unpublished READY version and a bounded explanatory note. It does not upload, modify or publish knowledge. The candidate FK automatically reflects the version's actual publication status/time when Stage F publishes it. The workflow deliberately remains FIX_PROPOSED until an admin records PUBLISHED; that command verifies the candidate is still the current non-archived publication and copies its real publication time into the issue. This is the explicit publication-relationship record in internal history. No automatic success/verification claim is made.
+
+Dismissal requires a reason (NOT_A_KNOWLEDGE_PROBLEM, DUPLICATE, EXPECTED_BEHAVIOR or OTHER), actor, timestamp and note. Dismissed issues are retained and the same grouping key receives future signals instead of creating endless duplicate issues. Neither dismissal nor publication automatically reopens on one signal. Detail exposes recurrence after the recorded publication and admins can return the issue to REVIEWING. Failures attributed to a different newly published version may form a separate group by design; automated merging/reopening is deferred.
+
+### Ingestion, failure isolation and historical reconciliation
+
+After the Stage D generation or terminal-decision transaction commits, a safe synchronous post-commit helper attempts signal derivation. It locks the organization, reads the authoritative run/evaluation, finds or creates the stable issue, inserts its unique signal and linked versions, and records initial detection in one transaction. Repeated exact decision retries can also repair a previously missed signal. Unique constraints plus the shared lock make concurrent ingestion idempotent.
+
+Analytics errors log only a fixed event plus organization/run IDs and do not escape to the already-successful customer operation. Tests inject real signal INSERT failure after terminal rejection and a post-commit analytics lookup failure after sending a reply: the authoritative evaluation/message remain successful. There is no Socket.IO work or analytics transaction inside the message/decision transaction.
+
+Until Stage I adds a durable outbox, a process crash between commit and ingestion can miss an issue signal. The repair boundary is the tenant-scoped `reconcileKnowledgeSignals` service and explicit maintenance command, run from `apps/api`:
+
+```text
+pnpm exec tsx prisma/reconcileKnowledgeIssues.ts <organizationId> [afterId] [limit]
+```
+
+One invocation processes at most 500 runs (default 100), returns scanned/created counts and a cursor, performs no AI-provider calls and has no customer-facing side effects. This is an operator command, not an unauthenticated HTTP endpoint or an automatically scheduled job. Resume the returned cursor to finish a pass; periodically start again without a cursor to find late terminal decisions on older runs. Reruns are safe. A failed batch can be retried because each per-run transaction is atomic.
+
+The retained isolated historical database contained 35 runs across 28 organizations at reconciliation time. The first complete pass created **3 signals**; the second scanned the same 35 runs and created **0**. Full Copilot rows compared unchanged before/after. Separate integration fixtures exercise bounded cursors, late decisions and repeated/concurrent ingestion. No production backfill was run. Counters need no repair because they are query-derived; a future classifier-version change requires a deliberate migration/reclassification plan rather than silently rewriting issue workflow history.
+
+### Version-aware source health and rate definitions
+
+A source use means **one evidence-eligible, relationally verified document version per CopilotRun**, regardless of its number of chunks. Unselected diagnostic candidates and legacy snapshots without verified version identity are excluded from version-specific health. This avoids guessing that the current publication supplied a historical answer.
+
+Attribution rules are intentionally narrower than issue creation:
+
+- Accepted/edited/rejected usage is counted without implying source correctness.
+- BAD_TONE and arbitrary edits/rejections incur no knowledge penalty.
+- INSUFFICIENT_KB/INSUFFICIENT_KNOWLEDGE can create a gap but do not establish that an existing source is bad, including when no source exists.
+- WRONG_KNOWLEDGE and IRRELEVANT_EVIDENCE plausibly implicate a source only when exactly one eligible verified version supplied evidence. Multiple selected versions make that attribution ambiguous, so no individual source is blamed automatically.
+- CONFLICTING_KNOWLEDGE policy can implicate the selected versions collectively.
+- UNSUPPORTED_CLAIM creates an output-grounding issue but is not automatically blamed on a retrieved document.
+- Retrieval degradation/customer clarification produce no source penalty.
+
+Version rows return use/evaluated/accepted/edited/rejected counts, attributed failure counts, specific wrong/relevance/conflict counts, current/superseded status and linked issue count/filtering. v3 never inherits v2's numerator/denominator. `observedFailureRate` is attributed **evaluated** failures / evaluated uses; `signalRate` is all attributed human/policy signals / all uses. Both return numerator, denominator and percentage, with zero for an empty denominator. Fewer than ten evaluated uses is labeled Limited data. Ordering uses observed counts, not dramatic small-sample percentage rankings. These are observed associations, not proof a publication improved outcomes.
+
+### Shared analytics, UI, time windows and query strategy
+
+The existing dashboard delegates its AI section to the same quality services; its old unbounded Copilot aggregation and broad source penalties are removed. The new `/quality` UI has Overview, Knowledge Issues, Source Health and Copilot Runs. The organization selector excludes customer memberships. Rates always show counts; policy outcomes separate missing inputs, insufficient/conflicting knowledge and degradation. Recorded retrieval status combinations, human reasons, knowledge failures/distinct tickets, operational failures and mean recorded duration/sample count are available. Issue detail includes sources, authorized ticket/run links, candidate state, current assignee, signal pagination and internal history. Run details use the existing authorized historical-run endpoint. No Reliability Lab UI is introduced.
+
+Quality overview/source/run endpoints under `/api/v1/organizations/:orgId/quality` default to the last 30 days, support 7/30/90-day presets and validated custom ISO `from`/`to` ranges of at most 90 days. Windows are inclusive-from/exclusive-to and filter **CopilotRun.createdAt in PostgreSQL before aggregation**. Late feedback is attributed to its run's cohort, not to an unrelated decision-date period. Every persisted run is feedback-eligible here because Stage D permits rejecting abstained/legacy runs: evaluation coverage is evaluated / all persisted runs. Acceptance/edit/rejection use evaluated runs; abstention uses all runs. `eligibleRuns` explicitly equals that feedback-eligible population. These are descriptive cohorts, not feedback-bias corrections.
+
+Issue recurrence/severity lists are deliberately lifetime operational views, labeled as such, with status/severity/assignee/source-version filters. They do not silently inherit the overview's date range. Lists and signals are paginated at 25 rows. Current issue history returns the newest 50 events; older history remains retained in PostgreSQL. Staff lookup for filtering returns at most 200 staff identities and no email/customer profile fields. Future larger deployments need expanded lookup/history pagination.
+
+SQL performs counts/distributions/distinct-ticket/version attribution within the bounded tenant/date cohort; it does not send all run snapshots to Node. Separate clear aggregate queries are used instead of a monolithic BI query. A composite CopilotRun(organizationId,createdAt) index supports date ranges. Issue/status/assignment/candidate and signal/source indexes match list/relationship queries. Source health still parses selected evidence JSON and joins verified lineage; it is intentionally the heaviest analytics query. A wider analytics warehouse or denormalized fact table is not introduced.
+
+### Migration, tests and performance
+
+Migration `20260928010000_knowledge_issues` creates the four domain tables, status enum, indexes, unique run/group constraints and tenant/source-lineage triggers. Candidate and signal-source retention FKs are deferred to preserve the existing whole-organization erasure cascade. No existing Copilot decisions, source snapshots or immutable knowledge versions are updated. Schema creation is separate from application backfill. A repeatable migration test starts from the real Stage F migration chain with published knowledge, a historical linked run and evaluation, applies G, compares all original rows and proves migration alone creates no issue signals.
+
+- All **11 migrations** deployed to a fresh isolated database; Stage F → G deployment also passed against the retained representative database.
+- Explicit preservation assertions passed for **52 documents, 58 versions, 50 chunks, 34 runs, 13 evaluations and 43 messages** captured before the upgrade. Every captured original row compared unchanged. The subsequent reconciliation fixture also included one additional retained test run, explaining its 35-run count.
+- Prisma format/validate/generate, API TypeScript build, client TypeScript/Vite build, offline frozen lockfile validation and `git diff --check` passed. No dependency/lockfile change was required. Existing Prisma configuration/ts-jest compatibility warnings and the ~590 kB client bundle warning remain.
+- API unit tests: **201 passed / 14 suites**, including classification exclusions, attribution/deduplication, normalization/grouping, severity boundaries, transition rules, dates and the corrected shared retrieval-scope assertion.
+- PostgreSQL integration: **111 passed / 9 suites, 2 skipped local pgvector cases**. G covers concurrent signal creation, distinct-ticket counts, severity/ranking, idempotent bounded reconciliation/late decisions, source attribution and version separation, candidate workflow, PUBLISHED versus VERIFIED, dismissal/recurrence, revision conflicts, assignment revocation, audit rollback, tenant/customer/agent/demo denial, date/empty/legacy cohorts, classifier SQL parity and post-commit failure isolation. Prior C–F transaction/security/retrieval tests remain included.
+- Client tests: **20 passed / 4 suites**, including ratio counts, read-only detail, candidate/revision submission, conflict display without retry, publication gating and customer exclusion. CI now also runs these client tests after building. Local browser end-to-end/visual testing was not performed; component behavior and production compilation were verified.
+- pgvector remains unavailable locally. The existing E/F real-vector tests remain mandatory in CI under SUPPORTIQ_TEST_PGVECTOR=1 and were not weakened. No remote CI run/push occurred. Local integration uses real PostgreSQL and FTS with the existing external queue stub; no live providers or real Redis-worker transport were exercised.
+- Representative isolated performance fixture: **20,000 runs, 10,000 evaluations, 2,000 signals, 300 issues, 1,000 tickets and 50 published versions**, with repeated chunk references and ~1 kB evidence text per chunk. Three service-call measurements including authorization/database round trips were: overview **503.7 / 196.9 / 573.3 ms**, issue list **32.3 / 12.6 / 23.8 ms**, source health **806.0 / 701.6 / 575.3 ms**. The bounded run-range EXPLAIN used `CopilotRun_organizationId_createdAt_idx` in an index-only scan. These are synthetic local timings without HTTP serialization, not an SLA or a scale guarantee. Source-health cohort JSON work and deep offset pagination remain costs to revisit as volume grows. The benchmark's organization/data were removed through the existing tenant-erasure boundary afterward.
+- Logs, migration/backfill/preservation assertions, benchmark script/plan and exact delta inventory are retained in sibling `supportiq-stage-g-test`. The isolated PostgreSQL cluster is stopped after final validation; no production service/data was accessed.
+
+### Limits, quality bar and next stage
+
+Deterministic title-derived grouping under-merges paraphrases and may separate the same problem after source-version changes. Shared-source ambiguity is left unattributed, legacy source versions remain unknown, and tiny samples are not reliable comparative evidence. Severity is lifetime recurrence rather than recency/financial risk. Unpersisted failures cannot be reconstructed from historical runs. There is no durable outbox or automatic reconciliation scheduler; operators must run repair passes after outages and for historical data. Workflow history is retained but its UI currently shows the latest 50 entries. Classifier changes need explicit versioned handling. Local provider/Redis/vector validation limits from prior stages remain.
+
+Stage G changes 31 paths relative to the preserved Stage F baseline, including this appendix: one migration/schema; issue classifier/policy/schema/services/routes and maintenance command; post-commit Copilot hooks and membership consistency; shared dashboard analytics; AI Quality UI/API/navigation/styles and client CI step; unit/integration/migration/client tests; and the focused lexical-scope regression fix. Prior uncommitted work remains present. Git remains on `codex/supportiq-hardening` at `817bebb`: 42 modified tracked files, 54 untracked files and nothing staged across the accumulated Stage C–G work. No commit, push or deployment occurred.
+
+The Stage G quality bar is met within these limits: qualifying failures become persistent auditable issues with separate run/ticket counts; staff can review, assign and link a staged knowledge fix; the published candidate relationship is visible and can be deliberately recorded; publication is never described as verified improvement. Version-level observations and explicit denominators support investigation while distinguishing KB, customer-input and operational problems.
+
+The exact next phase is **Stage H — AI Reliability Lab + Historical Replay**: build tenant-scoped, bounded evaluation cohorts from immutable Copilot history and KnowledgeIssue signals; evaluate explicitly selected candidate knowledge versions with recorded retrieval/evidence-policy/provider settings; retain replay provenance and compare outcomes with baseline runs; expose measured verification evidence and gate VERIFIED through that service. Keep replay separate from customer message sending and production publication. Prompt/model experiments, provider variability and evaluation criteria need explicit controls; Stage G observations alone are not causal validation. **Stage H has not begun.**
+
+## Stage H — AI Reliability Lab and historical replay
+
+### Purpose, scope and preservation
+
+Stage H evaluates candidate knowledge and registered AI configurations against immutable support history before customer-facing adoption. Historical ACCEPTED/EDITED/REJECTED feedback remains a human usefulness signal, never an objective accuracy label. Replay cannot send customer messages, create production CopilotRuns/decisions/signals, change ticket state/assignment, or write customer-visible activities. Verification writes only the issue status/revision and its internal history.
+
+Work continued in the existing `codex/supportiq-hardening` worktree at `817bebb2fed91d7437fefc85cb94eb9da11f3829`. Before editing, all **96** accumulated changed/untracked files were copied to sibling `supportiq-stage-h-baseline`, with a manifest and base SHA. The original stale checkout was not edited. Existing Phase 1 and Stages A–G remain preserved; prior sections of this record are unchanged. Nothing was committed, pushed or deployed. Stage I was not started.
+
+### Domain and historical baseline
+
+Migration `20260929010000_reliability_lab` adds `EvaluationSuite`, `EvaluationCase`, `EvaluationExperiment`, `EvaluationScopeVersion` and `EvaluationResult`, plus purpose/status/classification enums. Suites and experiments belong to an organization; cases inherit tenant scope through their suite and historical run, and results through their experiment/case. Database triggers reject cross-tenant issue/run/version links and results from the wrong suite. Unique constraints prevent duplicate suite/run and experiment/case pairs. Indexes cover tenant/date/status/purpose, issue/suite/run links, candidate versions and result classification.
+
+A suite is an immutable collection. Case creation copies the Stage D input, exact recorded retrieval query, original evidence, original suggestion, feedback disposition/reason/final response, provider/model and prompt/retrieval/evidence versions/configuration. It does **not** retrieve current ticket messages or rerun a baseline. Later ticket edits or late feedback cannot rewrite an existing case. A new suite captures a new historical selection. Runs without valid bounded Stage D input provenance are explicitly rejected rather than reconstructed from current tickets. Historical filters support disposition, abstention, evidence decision and a bounded date range (default 30 days, maximum 90). Explicit run selections deduplicate IDs. An over-limit selection is rejected rather than silently truncated.
+
+Suite/case/configuration/scope/result content is immutable in PostgreSQL. Experiments execute once: DRAFT → RUNNING → COMPLETED/FAILED/CANCELLED, with DRAFT → CANCELLED also supported. A new execution requires a new experiment. Completed and partial results cannot be edited or overwritten. Referenced historical runs and knowledge versions are retained; deferred retention FKs preserve existing whole-organization erasure behavior. There is no general evaluation deletion or editing endpoint. Manual case authoring and human scoring are deferred; the demo uses clearly marked illustrative histories.
+
+### Shared core and isolation boundary
+
+`ai.core.ts` extracts the existing context → retrieval → evidence policy → prompt → gated generation pipeline from `ai.service.ts`. Production still wraps that core with the existing CopilotRun/activity persistence and post-commit Stage G derivation. Its HTTP generation/decision/message behavior is preserved.
+
+`replay.case.ts` imports the shared core, read-only retrieval, registered provider helper, snapshot validators and deterministic comparison. It imports no ticket/message commands, realtime transport, production decision service or knowledge-signal ingestion. `replay.execution.ts` orchestrates evaluation-table persistence and current authorization. The separate verification command performs the explicitly authorized internal issue transition. Tests compare complete before/after ticket, message, activity, CopilotRun, decision, issue and signal rows and spy on the customer-event emitter. Replay leaves those production records unchanged, including under provider/retrieval failure. Verification itself changes only the expected issue/history records.
+
+### Candidate scope and configuration
+
+Only server registration `support-replay-v1` is accepted. It records the current `support-copilot-v3` prompt, `evidence-v2`, the selected retrieval strategy, configured Gemini/OpenAI models, embedding model, generation mode, limits and estimated application-level calls. Arbitrary prompts, code, provider names or model strings are not accepted from clients. Execution rejects unsupported/stale configuration versions or changed configured models rather than silently evaluating another setup. One current prompt/provider chain is implemented; no artificial model or prompt variants were invented.
+
+Experiment creation captures current published versions, then replaces only the logical documents named by explicit overrides. READY unpublished, current PUBLISHED and explicitly selected SUPERSEDED versions are allowed in replay. Other documents retain the publication captured at creation. Scope is capped at 1,000 current documents and ten overrides, with at most one override per logical document. Cross-tenant, archived-at-creation, missing and unprocessed versions are rejected. All scope versions have relational references and content hashes.
+
+The internal `evaluation-snapshot` scope permits pinned READY content while normal retrieval still captures current publications and accepts no HTTP scope override. Once pinned, version content, chunks and embeddings cannot change, including moves of pinned chunks into another version. Publication/supersession remain allowed without changing content. An already captured replay scope remains readable across later publication/archive changes; verification separately demands that the whole scope still matches current non-archived publications. Source names come from the immutable version, and unpublished evidence has an explicit null publication timestamp rather than a fabricated date.
+
+### Retrieval-only, hybrid and generation behavior
+
+The default is **lexical retrieval plus RRF selection and Evidence Policy v2**, registered as `lexical-rrf-v1`. Semantic embedding requests and response generation are both disabled, so this mode makes zero provider calls. Diagnostics explicitly record semantic DISABLED, and sources are labeled keyword retrieval. This is a narrower evidence-coverage test than production hybrid retrieval, not a claim that semantic retrieval ran for free. It reuses Stage E lexical search/fusion and the shared evidence core.
+
+Optional hybrid mode uses the current Stage E semantic/lexical implementation and pinned common scope. Its query embeddings can incur provider cost; the UI estimates those calls separately. Missing configuration, incomplete vector coverage or operational retrieval failures disqualify successful verification. Deliberate semantic DISABLED in lexical mode is a declared configuration, not an infrastructure failure.
+
+Generation is independently opt-in and remains gated by the evidence decision. The same registered prompt and configured provider chain are reused, with request parameters, resolved model/usage where available, attempt timings, fallback reason, outputs and rendered prompt recorded in the evaluation result. Replay provider requests have a 15-second timeout per attempt, and OpenAI retries are disabled for replay; production provider options are unchanged. A failed or unconfigured requested generation path is operational ERROR even if a local fallback text exists. Actual caught provider failures retain the retrieval/evidence result. Unexpected execution exceptions retain a sanitized error result. No provider errors become production knowledge defects or normal analytics traffic. No deterministic-generation seed or accuracy/similarity score is claimed.
+
+### Comparison, guardrails and verification
+
+Every case stores raw source-version additions/removals/overlap, baseline/candidate decisions, answer/abstention transitions, diagnostics and an explanation. Classifications are IMPROVED, UNCHANGED, REGRESSED, INCONCLUSIVE or ERROR:
+
+- Operational retrieval/generation failures are ERROR, never knowledge regression.
+- Previously supported cases that lose support are REGRESSED. Accepted guardrails pass only when evidence support remains; this does not prove their generated wording is correct.
+- Insufficient-knowledge cases improve only with ANSWER_SUPPORTED evidence selecting an intended candidate version. Conflict cases additionally rely on the existing narrow explicit refund-window conflict policy; there is no general contradiction detector.
+- WRONG_KNOWLEDGE requires supported evidence from the intended replacement and exclusion of every formerly selected version. IRRELEVANT_EVIDENCE additionally requires at least 60% direct lexical coverage from an eligible intended source. These are declared historical evidence criteria, not factual-truth adjudication.
+- Unsupported-claim and other cases without an adequate automatic criterion remain INCONCLUSIVE. Ordinary historical comparison reports unchanged decisions without inventing a correctness score.
+
+Issue suites include **all current issue signals** plus up to ten previously ACCEPTED, ANSWER_SUPPORTED, provenance-bearing runs related to the same logical document or exact case-insensitive normalized topic. Selection is deterministic: oldest run timestamp, then ID. Guards exclude failure IDs. Missing snapshots or a combined population above 50 block automatic creation/verification; required cases are not silently omitted. Exact-topic matching can miss paraphrases, so the relationship is intentionally narrow.
+
+Only the dedicated OWNER/ADMIN verification command can transition PUBLISHED → VERIFIED. The ordinary Stage G status endpoint still rejects VERIFIED. Verification requires a COMPLETED POST_PUBLICATION_VERIFICATION experiment for the same tenant/issue; the exact linked candidate must still be the current PUBLISHED version, with the recorded hash, and the entire evaluated scope must still equal current publication. All original failure cases and every current issue signal must have an IMPROVED result. All currently sampled guardrails must be covered and preserved, with at least one guardrail. Missing, cancelled, failed, error, inconclusive or regressed results block verification. Coverage is recalculated under the organization lock, so later signals or newly required guardrails cannot be silently ignored. A pre-publication result or an experiment for an older published version cannot verify a newer fix.
+
+The internal VERIFIED audit records experiment/version identity, failure and guardrail denominators, timestamp, actor and criteria version. The UI says “Verified against N historical cases.” It means these defined evidence criteria passed, not that knowledge is objectively perfect. PRE_PUBLICATION never publishes a document or changes the issue publication state. GENERAL_COMPARISON never unlocks verification.
+
+### Runner limits, authorization and UI
+
+Limits are 50 cases per suite/experiment, ten cases when generation is enabled, serial case execution, and one active execution per organization. Database RUNNING state prevents ordinary duplicate starts; a process-local slot remains held until in-flight work returns, even after cancellation. A cooperative three-minute deadline is checked between cases. Cancellation retains completed rows and accurate completed/total counts, prevents further result writes, and cannot undo a provider request already sent. Infrastructure failure retains completed results and marks FAILED where storage remains available. A process crash or sustained database outage can leave RUNNING; an admin must cancel it and create a new experiment. This is synchronous bounded execution, **not** a durable queue or resumable worker. Multi-process cancellation/worker recovery is not claimed.
+
+OWNER/ADMIN may create suites/experiments, execute/cancel and verify. AGENT can inspect; CUSTOMER and other tenants cannot. Current authorization and demo checks are enforced in service transactions as well as routes, and are rechecked between cases. Demo API users cannot mutate or incur provider cost. Lists paginate at 25 with validated filters; detail is bounded by the 50-case limit. Provider-call estimates distinguish embeddings and at most two application generation attempts per case; currency cost is not estimated.
+
+AI Quality now includes Reliability Lab. Its home lists purpose/status/candidate, actor/time, case counts and classifications, with status/purpose/date filters. Creation supports issue cohorts, historical filters or existing immutable suites; an admin reviews the prepared count, candidate version, registered configuration and optional provider modes before creating a draft and deliberately executing it. Detail exposes frozen inputs, historical feedback/final text, baseline and candidate answers/evidence, version changes, diagnostics and explicit denominators. Issue detail links its experiments, exposes verification through completed post-publication runs, and renders audited coverage counts. Rich prompt editing, general model benchmarking, manual scoring and optional add-to-suite/source-health shortcuts are not included.
+
+### Seeded demonstration
+
+`seedReliability.ts` is invoked by the existing operator seed. It labels the organization’s new histories and experiments as DEMO/illustrative; it does not claim real customer observations. Baseline guardrail evidence references the actual seeded publication. Candidate results are produced by the real lexical/evidence runner with both paid provider modes disabled, not hard-coded result percentages.
+
+Validated in a separate empty demo test database, then reseeded successfully:
+
+- Staged policy v2: **5/6 failures improved**, one unchanged, **10/10 guardrails preserved**, zero regressions/errors.
+- Published policy v3 adds the missing deployment exception: **6/6 failures improved**, **10/10 guardrails preserved**, zero regressions/errors.
+- The illustrative issue has a VERIFIED audit linked to the completed post-publication experiment and exact v3. Read-only demo users inspect the completed story without executing it.
+
+### Validation and measured limits
+
+Fresh final migration deployment applied all **12 migrations**. A retained Stage G database upgraded to H without changing captured rows: **54 tickets, 48 messages, 179 activities, 35 CopilotRuns, 13 decisions, 52 documents, 58 versions, 50 chunks, three issues, three signals, four issue-source links and three history rows**. The repeatable G → H migration test independently builds the earlier chain with publication/run/decision/issue fixtures, applies H and compares original rows. Whole-tenant erasure with pinned evaluation data remains tested.
+
+Final test/build counts and Git inventory are recorded below after the final checks. Local tests use real PostgreSQL/FTS with the existing external queue stub; paid provider credentials are disabled. Local pgvector is unavailable: the two existing vector cases remain skipped locally and mandatory in pgvector-enabled CI. No Redis transport, live provider, remote CI or browser end-to-end/visual run was performed. The existing client bundle-size warning remains. Frozen-lockfile validation required no dependency/lockfile changes.
+
+The 50-case synthetic retrieval-only benchmark ran serially with zero embedding/generation calls. Observed service execution times were **5,346 ms**, **3,512 ms** and **682 ms** across cold/concurrent and warm local runs. Corresponding per-case pipeline medians were 9/6/1 ms and p95 values 20/11/2 ms. These measurements include per-case pipeline work and, for total time, authorization/result persistence; setup of the historical fixture is excluded. SQL query counts were not instrumented. The small-text fixture is not a large-snapshot throughput or production latency guarantee.
+
+Known limits: lexical replay has narrower coverage than hybrid; deterministic source/coverage rules are not factual labels; exact-topic guardrails under-match paraphrases; no guards means no verification; large issue cohorts require a future coverage design rather than truncation; only the current registered prompt/provider chain is available; model outputs remain nondeterministic; partial execution is retained but not resumed; cancellation cannot reclaim spent provider tokens; large bounded snapshots can still make detail responses heavy. Stored actor identities and snapshots intentionally retain historical context until tenant erasure.
+
+The Stage H quality bar is met within those limits: immutable historical baselines, unpublished candidate evaluation, zero customer-side effects, transparent measured comparisons, guardrail protection and exact-publication verification form a working end-to-end product workflow. **Do not start Stage I automatically.** The next phase is **Stage I — Production Ingestion, Recovery, Storage + Observability**: replace local-file assumptions with object storage, harden DB → queue handoff, add idempotent processing/reconciliation and recovery, and introduce structured operational observability. It should address durable execution/recovery deliberately rather than retroactively claiming Stage H is a distributed worker system.
+
+### Final validation and file inventory
+
+- API unit: **210 passed / 15 suites**.
+- PostgreSQL integration: **125 passed / 11 suites**, with the **two existing local pgvector skips** retained. Stage H contributes 13 behavioral tests and one migration test. The final 13-case Stage H suite was rerun successfully after cancellation-slot and provenance-label adjustments.
+- Client: **24 passed / five suites**, including explicit denominator, role visibility and audited verification-count assertions.
+- API TypeScript and client TypeScript/Vite builds, Prisma format/validate/generate, fresh migrations, preserved-history upgrade, demo seed/reseed assertions, offline frozen lockfile and whitespace checks passed. The ~604 kB client bundle warning remains.
+- Artifact logs, before/after preservation evidence, demo result assertions and exact baseline-relative inventory are retained in sibling `supportiq-stage-h-test`; credentials/provider payloads are not logged.
+- Git remains on `codex/supportiq-hardening` at `817bebb`: **42 modified tracked files and 69 untracked files**, nothing staged, across accumulated C–H work. Stage H changes **32 paths** relative to the preserved G baseline. No commit, push or deployment.
+
+Stage H paths (earlier-stage files not listed here remain preserved):
+
+- `apps/api/prisma/schema.prisma`
+- `apps/api/prisma/seed.ts`
+- `apps/api/src/app.ts`
+- `apps/api/src/modules/ai/ai.service.ts`
+- `apps/api/src/modules/knowledge-base/kb.vector.ts`
+- `docs/repository-reconciliation.md`
+- `apps/api/prisma/migrations/20260929010000_reliability_lab/migration.sql`
+- `apps/api/prisma/seedReliability.ts`
+- `apps/api/src/__tests__/reliability.migration.integration.test.ts`
+- `apps/api/src/__tests__/reliability.test.ts`
+- `apps/api/src/__tests__/stage-h.integration.test.ts`
+- `apps/api/src/modules/ai/ai.core.ts`
+- `apps/api/src/modules/ai/ai.provenance.ts`
+- `apps/api/src/modules/ai/ai.provider.ts`
+- `apps/api/src/modules/ai/evidence-policy.ts`
+- `apps/api/src/modules/knowledge-base/kb.hybrid.ts`
+- `apps/api/src/modules/knowledge-base/kb.lexical.ts`
+- `apps/api/src/modules/knowledge-base/kb.retrieval.ts`
+- `apps/api/src/modules/knowledge-base/kb.scope.ts`
+- `apps/api/src/modules/reliability/replay.case.ts`
+- `apps/api/src/modules/reliability/replay.comparison.ts`
+- `apps/api/src/modules/reliability/replay.execution.ts`
+- `apps/api/src/modules/reliability/replay.routes.ts`
+- `apps/api/src/modules/reliability/replay.schema.ts`
+- `apps/api/src/modules/reliability/replay.service.ts`
+- `apps/client/src/features/quality/QualityPage.test.tsx`
+- `apps/client/src/features/quality/QualityPage.tsx`
+- `apps/client/src/features/quality/ReliabilityLab.test.tsx`
+- `apps/client/src/features/quality/ReliabilityLab.tsx`
+- `apps/client/src/features/quality/quality.css`
+- `apps/client/src/features/quality/qualityApi.ts`
+- `apps/client/src/features/quality/reliabilityApi.ts`

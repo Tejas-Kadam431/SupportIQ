@@ -1,3 +1,5 @@
+import { z } from "zod";
+import { versionHistoryHandler, publishVersionHandler, copilotKnowledgeHandler } from "./kb.controller.js";
 import { Router } from "express";
 import { authenticate } from "../../common/middleware/auth.middleware.js";
 import { validate } from "../../common/middleware/validate.middleware.js";
@@ -79,3 +81,8 @@ kbRoutes.delete(
   blockDemoWrites(),
   asyncHandler(deleteDocumentHandler)
 );
+kbRoutes.get("/documents/:documentId/versions",requireOrgRole(["OWNER","ADMIN","AGENT"]),asyncHandler(versionHistoryHandler));
+kbRoutes.post("/documents/:documentId/versions",requireOrgRole(["OWNER","ADMIN"]),blockDemoWrites(),uploadKnowledgeDocument.single("file"),asyncHandler(uploadDocumentHandler));
+kbRoutes.post("/documents/:documentId/versions/:versionId/process",requireOrgRole(["OWNER","ADMIN"]),blockDemoWrites(),asyncHandler(reprocessDocumentHandler));
+kbRoutes.post("/documents/:documentId/versions/:versionId/publish",requireOrgRole(["OWNER","ADMIN"]),blockDemoWrites(),validate(z.object({body:z.object({expectedCurrentVersionId:z.string().min(1).nullable()}).strict()})),asyncHandler(publishVersionHandler));
+kbRoutes.get("/copilot-runs/:runId/sources",requireOrgRole(["OWNER","ADMIN","AGENT"]),asyncHandler(copilotKnowledgeHandler));

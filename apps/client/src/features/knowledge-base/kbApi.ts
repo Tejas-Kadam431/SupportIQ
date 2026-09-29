@@ -7,7 +7,13 @@ export type KnowledgeDocumentStatus =
   | "READY"
   | "FAILED";
 
+export type KnowledgeVersion = { id:string;versionNumber:number;status:"UPLOADED"|"PROCESSING"|"READY"|"PUBLISHED"|"SUPERSEDED"|"FAILED";createdAt:string;publishedAt:string|null;errorMessage:string|null;sourceHash?:string|null;contentHash?:string|null; };
+
 export type KnowledgeDocument = {
+  currentPublishedVersionId: string|null;
+  currentPublishedVersion: KnowledgeVersion|null;
+  versions: KnowledgeVersion[];
+  archivedAt: string|null;
   id: string;
   organizationId: string;
   uploadedById: string;
@@ -27,22 +33,8 @@ export type KnowledgeDocument = {
 };
 
 export type KnowledgeSearchResult = {
-  id: string;
-  organizationId: string;
-  documentId: string;
-  chunkIndex: number;
-  content: string;
-  tokenCount: number;
-  createdAt: string;
-  score: number;
-  document: {
-    id: string;
-    originalName: string;
-    fileName: string;
-    mimeType: string;
-    status: KnowledgeDocumentStatus;
-    createdAt: string;
-  };
+  id: string; documentId: string; chunkIndex: number; content: string; tokenCount: number;
+  score: number; document: { originalName: string };
 };
 
 export type ListDocumentsResponse = {
@@ -75,6 +67,9 @@ export type SearchKnowledgeResponse = {
 
 export const kbApi = api.injectEndpoints({
   endpoints: (builder) => ({
+    knowledgeVersions: builder.query<{data:{document:KnowledgeDocument}},{orgId:string;documentId:string}>({query:({orgId,documentId})=>`/organizations/${orgId}/kb/documents/${documentId}/versions`,providesTags:["KnowledgeBase"]}),
+    uploadKnowledgeVersion: builder.mutation<UploadDocumentResponse,{orgId:string;documentId:string;file:File}>({query:({orgId,documentId,file})=>{const body=new FormData();body.append("file",file);return {url:`/organizations/${orgId}/kb/documents/${documentId}/versions`,method:"POST",body};},invalidatesTags:["KnowledgeBase"]}),
+    publishKnowledgeVersion: builder.mutation<unknown,{orgId:string;documentId:string;versionId:string;expectedCurrentVersionId:string|null}>({query:({orgId,documentId,versionId,expectedCurrentVersionId})=>({url:`/organizations/${orgId}/kb/documents/${documentId}/versions/${versionId}/publish`,method:"POST",body:{expectedCurrentVersionId}}),invalidatesTags:["KnowledgeBase"]}),
     listKnowledgeDocuments: builder.query<ListDocumentsResponse, string>({
       query: (orgId) => `/organizations/${orgId}/kb/documents`,
       providesTags: ["KnowledgeBase"]
@@ -136,6 +131,7 @@ export const kbApi = api.injectEndpoints({
 });
 
 export const {
+  useKnowledgeVersionsQuery, useUploadKnowledgeVersionMutation, usePublishKnowledgeVersionMutation,
   useListKnowledgeDocumentsQuery,
   useUploadKnowledgeDocumentMutation,
   useDeleteKnowledgeDocumentMutation,

@@ -1,3 +1,5 @@
+import { reliabilityRoutes } from "./modules/reliability/replay.routes.js";
+import { qualityRoutes } from "./modules/knowledge-issues/quality.routes.js";
 import express from "express";
 import cors from "cors";
 import morgan from "morgan";
@@ -61,6 +63,8 @@ app.use("/health", healthRoutes);
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/organizations", orgRoutes);
 app.use("/api/v1/organizations/:orgId/dashboard", dashboardRoutes);
+app.use("/api/v1/organizations/:orgId/quality", qualityRoutes);
+app.use("/api/v1/organizations/:orgId/reliability", reliabilityRoutes);
 app.use("/api/v1/organizations/:orgId/tickets", orgTicketRoutes);
 app.use("/api/v1/tickets", ticketRoutes);
 app.use("/api/v1/tickets", aiRoutes);

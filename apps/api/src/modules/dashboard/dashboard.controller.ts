@@ -28,7 +28,7 @@ export async function getDashboardHandler(
   const userId = getUserId(req);
   const orgId = getParam(req, "orgId");
 
-  const dashboard = await getOrganizationDashboard(userId, orgId);
+  const dashboard = await getOrganizationDashboard(userId, orgId, req.query);
 
   return res.status(200).json({
     data: dashboard

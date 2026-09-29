@@ -1,196 +1,75 @@
 import { useState } from "react";
-import {
-  type KnowledgeDocument,
-  type KnowledgeDocumentStatus,
-  useDeleteKnowledgeDocumentMutation,
-  useReprocessKnowledgeDocumentMutation
-} from "./kbApi";
+import { type KnowledgeDocument, useDeleteKnowledgeDocumentMutation, useReprocessKnowledgeDocumentMutation, useKnowledgeVersionsQuery, useUploadKnowledgeVersionMutation, usePublishKnowledgeVersionMutation } from "./kbApi";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 import "./kb.css";
-
 type Props = {
-  orgId: string;
-  documents: KnowledgeDocument[];
-  isLoading: boolean;
-  isError: boolean;
-  isFetching?: boolean;
+    orgId: string;
+    documents: KnowledgeDocument[];
+    isLoading: boolean;
+    isError: boolean;
+    isFetching?: boolean;
+    canManage?: boolean;
 };
-
-export function DocumentList({
-  orgId,
-  documents,
-  isLoading,
-  isError,
-  isFetching = false
-}: Props) {
-  const [actionError, setActionError] = useState("");
-
-  const [deleteDocument, { isLoading: isDeleting }] =
-    useDeleteKnowledgeDocumentMutation();
-
-  const [reprocessDocument, { isLoading: isReprocessing }] =
-    useReprocessKnowledgeDocumentMutation();
-
-  async function handleDelete(documentId: string) {
-    const confirmed = window.confirm("Delete this document?");
-
-    if (!confirmed) return;
-
-    setActionError("");
-
-    try {
-      await deleteDocument({
-        orgId,
-        documentId
-      }).unwrap();
-    } catch (error) {
-      console.error("Failed to delete document:", error);
-      setActionError(getApiErrorMessage(error, "Failed to delete document."));
+export function DocumentList({ orgId, documents, isLoading, isError, canManage = false }: Props) {
+    return <section className="siq-card kb-documents-card"><h2>Knowledge publications</h2><p>Upload and prepare a version, then publish it when ready. Previous publications remain in history.</p>
+ {isLoading && <p>Loading documents…</p>}{isError && <p role="alert">Could not load documents.</p>}
+ {!isLoading && !documents.length && <p>No active knowledge documents.</p>}
+ {documents.map(doc => <DocumentCard key={doc.id} orgId={orgId} document={doc} canManage={canManage}/>)}
+ </section>;
+}
+function DocumentCard({ orgId, document: doc, canManage }: {
+    orgId: string;
+    document: KnowledgeDocument;
+    canManage: boolean;
+}) {
+    const [expanded, setExpanded] = useState(false), [error, setError] = useState("");
+    const [archive, { isLoading: archiving }] = useDeleteKnowledgeDocumentMutation();
+    const [retry, { isLoading: retrying }] = useReprocessKnowledgeDocumentMutation();
+    const latest = doc.versions?.[0], current = doc.currentPublishedVersion;
+    async function action(kind: "archive" | "retry") { setError(""); try {
+        await (kind === "archive" ? archive({ orgId, documentId: doc.id }) : retry({ orgId, documentId: doc.id })).unwrap();
     }
-  }
-
-  async function handleReprocess(documentId: string) {
-    setActionError("");
-
-    try {
-      await reprocessDocument({
-        orgId,
-        documentId
-      }).unwrap();
-    } catch (error) {
-      console.error("Failed to reprocess document:", error);
-      setActionError(getApiErrorMessage(error, "Failed to reprocess document."));
+    catch (e) {
+        setError(getApiErrorMessage(e, "Knowledge update failed"));
+    } }
+    return <article className="siq-card" style={{ padding: 16, marginTop: 12 }}><h3>{doc.originalName}</h3>
+ <p>{current ? "Published v" + current.versionNumber + " · " + new Date(current.publishedAt!).toLocaleString() : "Not published"}</p>
+ {latest && latest.id !== current?.id && <p>Latest update: v{latest.versionNumber} · {latest.status.toLowerCase()}</p>}
+ {latest?.errorMessage && <p role="alert">{latest.errorMessage}</p>}
+ <button className="siq-button" onClick={() => setExpanded(!expanded)}>{expanded ? "Hide history" : "Version history"}</button>{" "}
+ {canManage && <><button className="siq-button" disabled={archiving} onClick={() => action("archive")}>Archive</button>{" "}
+ {latest && ["FAILED", "UPLOADED"].includes(latest.status) && <button className="siq-button" disabled={retrying} onClick={() => action("retry")}>Retry processing</button>}</>}
+ {error && <p role="alert">{error}</p>}{expanded && <VersionHistory orgId={orgId} documentId={doc.id} canManage={canManage}/>}
+ </article>;
+}
+export function VersionHistory({ orgId, documentId, canManage }: {
+    orgId: string;
+    documentId: string;
+    canManage: boolean;
+}) {
+    const { data, isLoading, isError } = useKnowledgeVersionsQuery({ orgId, documentId }, { pollingInterval: 5000 });
+    const [upload, { isLoading: uploading }] = useUploadKnowledgeVersionMutation();
+    const [publish, { isLoading: publishing }] = usePublishKnowledgeVersionMutation();
+    const [file, setFile] = useState<File | null>(null), [error, setError] = useState("");
+    const doc = data?.data.document;
+    async function uploadFile() { if (!file)
+        return; setError(""); try {
+        await upload({ orgId, documentId, file }).unwrap();
+        setFile(null);
     }
-  }
-
-  return (
-    <section className="siq-card kb-documents-card">
-      <div className="kb-documents-top">
-        <div>
-          <h2>Documents</h2>
-          <p>
-            Uploaded files are processed into chunks by background jobs and then
-            become searchable.
-          </p>
-        </div>
-
-        {isFetching && !isLoading && (
-          <span className="siq-badge siq-badge-blue">Refreshing</span>
-        )}
-      </div>
-
-      {isLoading && <div className="kb-loading">Loading documents...</div>}
-
-      {isError && (
-        <div className="kb-alert kb-alert-error">Failed to load documents.</div>
-      )}
-
-      {actionError && (
-        <div className="kb-alert kb-alert-error">{actionError}</div>
-      )}
-
-      {!isLoading && !isError && documents.length === 0 && (
-        <div className="kb-empty-state">
-          <strong>No knowledge documents uploaded yet</strong>
-          <p>Upload a document above to start building your support knowledge base.</p>
-        </div>
-      )}
-
-      {documents.length > 0 && (
-        <div className="kb-document-table">
-          <div className="kb-document-row kb-document-head">
-            <span>Document</span>
-            <span>Status</span>
-            <span>Chunks</span>
-            <span>Size</span>
-            <span>Uploaded</span>
-            <span>Actions</span>
-          </div>
-
-          {documents.map((document) => (
-            <article key={document.id} className="kb-document-row kb-document-item">
-              <div>
-                <strong>{document.originalName}</strong>
-                <small>{document.mimeType}</small>
-
-                {document.errorMessage && (
-                  <p className="kb-document-error">{document.errorMessage}</p>
-                )}
-              </div>
-
-              <span>
-                <StatusBadge status={document.status} />
-              </span>
-
-              <span className="kb-document-muted">
-                {document._count?.chunks ?? 0}
-              </span>
-
-              <span className="kb-document-muted">
-                {formatBytes(document.sizeBytes)}
-              </span>
-
-              <span className="kb-document-muted">
-                {document.uploadedBy.name}
-                <br />
-                {formatDate(document.createdAt)}
-              </span>
-
-              <div className="kb-document-actions">
-                <button
-                  type="button"
-                  className="siq-button"
-                  onClick={() => handleReprocess(document.id)}
-                  disabled={isReprocessing}
-                >
-                  Reprocess
-                </button>
-
-                <button
-                  type="button"
-                  className="siq-button kb-danger-button"
-                  onClick={() => handleDelete(document.id)}
-                  disabled={isDeleting}
-                >
-                  Delete
-                </button>
-              </div>
-            </article>
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function StatusBadge({ status }: { status: KnowledgeDocumentStatus }) {
-  return (
-    <span className={`siq-badge kb-status-${status.toLowerCase()}`}>
-      {formatLabel(status)}
-    </span>
-  );
-}
-
-function formatLabel(value: string) {
-  return value
-    .toLowerCase()
-    .split("_")
-    .map((part) => part[0].toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
-function formatBytes(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function formatDate(value: string) {
-  return new Date(value).toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit"
-  });
+    catch (e) {
+        setError(getApiErrorMessage(e, "Upload failed"));
+    } }
+    async function publishVersion(versionId: string) { if (!doc)
+        return; setError(""); try {
+        await publish({ orgId, documentId, versionId, expectedCurrentVersionId: doc.currentPublishedVersionId }).unwrap();
+    }
+    catch (e) {
+        setError(getApiErrorMessage(e, "Publication changed. Refresh history and retry."));
+    } }
+    return <section aria-label="Version history"><h4>Version history</h4>{isLoading && <p>Loading versions…</p>}{isError && <p role="alert">Could not load version history.</p>}
+ <ul>{doc?.versions.map(v => <li key={v.id}><strong>v{v.versionNumber}</strong> · {v.status.toLowerCase()} · {new Date(v.publishedAt ?? v.createdAt).toLocaleString()}{" "}
+ {canManage && v.status === "READY" && <button className="siq-button" disabled={publishing} onClick={() => publishVersion(v.id)}>Publish v{v.versionNumber}</button>}</li>)}</ul>
+ {canManage && <div><label>Replacement document <input aria-label="Replacement document" type="file" accept=".pdf,.txt,.md,.markdown" onChange={e => setFile(e.target.files?.[0] ?? null)}/></label><button className="siq-button" disabled={!file || uploading} onClick={uploadFile}>Upload new version</button></div>}
+ {error && <p role="alert">{error}</p>}</section>;
 }

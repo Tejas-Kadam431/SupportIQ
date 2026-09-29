@@ -1,3 +1,4 @@
+import { QualityPage } from "../features/quality/QualityPage";
 import { Navigate, createBrowserRouter } from "react-router-dom";
 import { LoginPage } from "../features/auth/LoginPage";
 import { RegisterPage } from "../features/auth/RegisterPage";
@@ -36,6 +37,10 @@ export const router = createBrowserRouter([
       {
         element: <AppLayout />,
         children: [
+          {
+            path: "quality",
+            element: <QualityPage />
+          },
           {
             path: "dashboard",
             element: <DashboardPage />

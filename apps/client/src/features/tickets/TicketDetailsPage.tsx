@@ -207,7 +207,7 @@ export function TicketDetailsPage() {
             </select>
           </div>
 
-          <div>
+          {ticket.canAssign && <div>
             <label
               style={{
                 display: "block",
@@ -239,7 +239,7 @@ export function TicketDetailsPage() {
                 Unassign
               </button>
             </div>
-          </div>
+          </div>}
         </div>
       </section>
 

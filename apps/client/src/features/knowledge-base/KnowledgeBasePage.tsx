@@ -39,12 +39,12 @@ export function KnowledgeBasePage() {
   const stats = useMemo(() => {
     return {
       total: documents.length,
-      ready: documents.filter((document) => document.status === "READY").length,
+      ready: documents.filter((document) => !!document.currentPublishedVersionId).length,
       processing: documents.filter(
         (document) =>
-          document.status === "PROCESSING" || document.status === "UPLOADED"
+          document.versions?.[0]?.status === "PROCESSING" || document.versions?.[0]?.status === "UPLOADED"
       ).length,
-      failed: documents.filter((document) => document.status === "FAILED").length,
+      failed: documents.filter((document) => document.versions?.[0]?.status === "FAILED").length,
       chunks: documents.reduce(
         (sum, document) => sum + (document._count?.chunks ?? 0),
         0
@@ -101,7 +101,7 @@ export function KnowledgeBasePage() {
         <>
           <section className="kb-stats-grid">
             <KbMetric title="Documents" value={stats.total} hint="Uploaded files" />
-            <KbMetric title="Ready" value={stats.ready} hint="Searchable documents" />
+            <KbMetric title="Published" value={stats.ready} hint="Searchable documents" />
             <KbMetric
               title="Processing"
               value={stats.processing}
@@ -112,13 +112,14 @@ export function KnowledgeBasePage() {
           </section>
 
           <section className="kb-main-grid">
-            <DocumentUpload orgId={selectedOrgId} />
+            {["OWNER","ADMIN"].includes(organizations.find(item=>item.organization.id===selectedOrgId)?.role??"") && <DocumentUpload orgId={selectedOrgId} />}
 
             <KnowledgeSearch orgId={selectedOrgId} />
           </section>
 
           <DocumentList
             orgId={selectedOrgId}
+            canManage={["OWNER","ADMIN"].includes(organizations.find(item=>item.organization.id===selectedOrgId)?.role??"")}
             documents={documents}
             isLoading={isLoadingDocuments}
             isError={isDocumentsError}

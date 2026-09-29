@@ -5,6 +5,7 @@ import { processKnowledgeDocument } from "./kb.processing.js";
 type ProcessKnowledgeDocumentJob = {
   orgId: string;
   documentId: string;
+  versionId: string;
   requestedById: string;
 };
 
@@ -32,7 +33,7 @@ export async function enqueueKnowledgeDocumentProcessing(
   data: ProcessKnowledgeDocumentJob
 ) {
   return knowledgeProcessingQueue.add("process-document", data, {
-    jobId: `process-document:${data.documentId}:${Date.now()}`
+    jobId: `process-version-${data.versionId}-${Date.now()}`
   });
 }
 
@@ -46,7 +47,8 @@ export function startKnowledgeProcessingWorker() {
   worker = new Worker<ProcessKnowledgeDocumentJob>(
     "knowledge-processing",
     async (job) => {
-      await processKnowledgeDocument(job.data.orgId, job.data.documentId);
+      if (!job.data.versionId) throw new Error("Legacy job requires explicit version requeue");
+      await processKnowledgeDocument(job.data.orgId, job.data.documentId, job.data.versionId);
     },
     {
       connection: redisConnection,
@@ -61,7 +63,7 @@ export function startKnowledgeProcessingWorker() {
   worker.on("failed", (job, error) => {
     console.error(
       `Knowledge document processing failed: ${job?.data.documentId}`,
-      error
+      { event: "knowledge.worker_failed" }
     );
   });
 

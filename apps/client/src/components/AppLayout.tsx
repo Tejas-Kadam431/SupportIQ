@@ -7,6 +7,7 @@ import { disconnectSocket } from "../features/realtime/socketClient";
 import "./appLayout.css";
 
 const navItems = [
+  {to:"/quality",label:"AI Quality",icon:"◈"},
   {
     to: "/dashboard",
     label: "Dashboard",

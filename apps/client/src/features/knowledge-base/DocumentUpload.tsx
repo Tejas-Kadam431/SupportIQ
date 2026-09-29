@@ -33,7 +33,7 @@ export function DocumentUpload({ orgId }: Props) {
       }).unwrap();
 
       setSuccessMessage(
-        "Document uploaded. Background processing will prepare it for search."
+        "Document uploaded. Background processing will prepare v1. Publish it from version history when ready."
       );
 
       setSelectedFile(null);

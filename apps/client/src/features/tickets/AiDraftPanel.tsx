@@ -1,5 +1,4 @@
-import { useState } from "react";
-import { useCreateMessageMutation } from "./messagesApi";
+import { useState, useRef } from "react";
 import {
   type AiDraftConfidence,
   type AiDraftGrounding,
@@ -8,6 +7,7 @@ import {
   type AiProvider,
   type CopilotFailureReason,
   useEvaluateCopilotMutation,
+  useSendCopilotMutation,
   useGenerateAiDraftMutation
 } from "./aiApi";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
@@ -35,7 +35,13 @@ const rejectionReasons: CopilotFailureReason[] = [
   "OTHER"
 ];
 
-export function AiDraftPanel({ ticketId }: Props) {
+export function AiDraftPanel(props: Props) {
+  return <AiDraftPanelContent key={props.ticketId} {...props} />;
+}
+
+function AiDraftPanelContent({ ticketId }: Props) {
+  const [terminal, setTerminal] = useState(false);
+  const submitting = useRef(false);
   const [tone, setTone] =
     useState<AiDraftTone>("PROFESSIONAL");
 
@@ -88,10 +94,6 @@ export function AiDraftPanel({ ticketId }: Props) {
   const [abstained, setAbstained] =
     useState(false);
 
-  const [
-    originalSuggestedReply,
-    setOriginalSuggestedReply
-  ] = useState("");
 
   const [
     rejectionReason,
@@ -120,9 +122,9 @@ export function AiDraftPanel({ ticketId }: Props) {
   ] = useEvaluateCopilotMutation();
 
   const [
-    createMessage,
+    sendCopilot,
     { isLoading: isSending }
-  ] = useCreateMessageMutation();
+  ] = useSendCopilotMutation();
 
   // -----------------------------
   // Generate Copilot run
@@ -143,6 +145,7 @@ export function AiDraftPanel({ ticketId }: Props) {
         response.data.suggestedReply ?? "";
 
       setRunId(response.data.runId);
+      setTerminal(false);
 
       setTopic(response.data.topic);
 
@@ -164,9 +167,6 @@ export function AiDraftPanel({ ticketId }: Props) {
 
       setDraft(suggestedReply);
 
-      setOriginalSuggestedReply(
-        suggestedReply
-      );
 
       setProvider(
         response.data.provider
@@ -236,80 +236,21 @@ export function AiDraftPanel({ ticketId }: Props) {
   // -----------------------------
 
   async function handleSendDraft() {
-    const trimmedDraft = draft.trim();
-
-    if (!trimmedDraft || abstained) {
-      return;
-    }
-
-    const confirmed = window.confirm(
-      "Send this Copilot suggestion as a public ticket message?"
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
-    setErrorMessage("");
-    setCopyMessage("");
-    setFeedbackMessage("");
-
+    if (!runId || !draft.trim() || abstained || terminal || submitting.current) return;
+    if (!window.confirm("Send this Copilot suggestion as a public ticket message?")) return;
+    submitting.current = true;
+    setErrorMessage(""); setCopyMessage(""); setFeedbackMessage("");
     try {
-      await createMessage({
-        ticketId,
-        body: trimmedDraft
-      }).unwrap();
-
-      setCopyMessage(
-        "Reply sent as a public message."
-      );
-
-      if (!runId) {
-        return;
-      }
-
-      const disposition =
-        trimmedDraft ===
-        originalSuggestedReply.trim()
-          ? "ACCEPTED"
-          : "EDITED";
-
-      try {
-        await evaluateCopilot({
-          ticketId,
-          runId,
-          disposition,
-          finalMessage: trimmedDraft
-        }).unwrap();
-
-        setFeedbackMessage(
-          disposition === "ACCEPTED"
-            ? "Copilot suggestion accepted. Feedback recorded."
-            : "Edited Copilot response recorded for AI quality analysis."
-        );
-      } catch (evaluationError) {
-        console.error(
-          "Message sent, but Copilot evaluation failed:",
-          evaluationError
-        );
-
-        setFeedbackMessage(
-          "Reply was sent, but AI feedback could not be recorded."
-        );
-      }
+      const response = await sendCopilot({ ticketId, runId, finalMessage: draft }).unwrap();
+      setTerminal(true);
+      setCopyMessage("Reply sent as a public message.");
+      setFeedbackMessage(response.data.evaluation.disposition === "ACCEPTED"
+        ? "Copilot suggestion accepted. Feedback recorded."
+        : "Edited Copilot response recorded for AI quality analysis.");
     } catch (error) {
-      console.error(
-        "Failed to send Copilot reply:",
-        error
-      );
-
-      setErrorMessage(
-        getApiErrorMessage(
-          error,
-          "Failed to send reply as message."
-        )
-      );
-    }
+      if (typeof error === "object" && error !== null && "status" in error && error.status === 409) setTerminal(true);
+      setErrorMessage(getApiErrorMessage(error, "Send could not be confirmed. Retry the same reply to check safely."));
+    } finally { submitting.current = false; }
   }
 
   // -----------------------------
@@ -317,10 +258,11 @@ export function AiDraftPanel({ ticketId }: Props) {
   // -----------------------------
 
   async function handleRejectCopilot() {
-    if (!runId) {
+    if (!runId || terminal || submitting.current) {
       return;
     }
 
+    submitting.current = true;
     setErrorMessage("");
     setFeedbackMessage("");
 
@@ -332,16 +274,14 @@ export function AiDraftPanel({ ticketId }: Props) {
         reason: rejectionReason
       }).unwrap();
 
+      setTerminal(true);
       setFeedbackMessage(
         `Copilot suggestion rejected: ${formatLabel(
           rejectionReason
         )}.`
       );
     } catch (error) {
-      console.error(
-        "Failed to save Copilot feedback:",
-        error
-      );
+      if (typeof error === "object" && error !== null && "status" in error && error.status === 409) setTerminal(true);
 
       setErrorMessage(
         getApiErrorMessage(
@@ -349,7 +289,7 @@ export function AiDraftPanel({ ticketId }: Props) {
           "Failed to save Copilot feedback."
         )
       );
-    }
+    } finally { submitting.current = false; }
   }
 
   const hasCopilotResult =
@@ -382,7 +322,7 @@ export function AiDraftPanel({ ticketId }: Props) {
               confidence
             )}`}
           >
-            {confidence} confidence
+            Evidence: {confidence === "HIGH" ? "Strong" : confidence === "MEDIUM" ? "Limited" : "Insufficient"}
           </span>
         )}
       </div>
@@ -420,7 +360,7 @@ export function AiDraftPanel({ ticketId }: Props) {
           type="button"
           className="siq-button siq-button-primary"
           onClick={handleGenerateDraft}
-          disabled={isGenerating}
+          disabled={isGenerating || isSending || isEvaluating}
         >
           {isGenerating
             ? "Analyzing..."
@@ -585,14 +525,11 @@ export function AiDraftPanel({ ticketId }: Props) {
           {abstained ? (
             <div className="ai-warning-box">
               <strong>
-                Copilot abstained
+                Reply needs agent review
               </strong>
 
               <p>
-                SupportIQ does not have
-                enough verified evidence
-                to recommend a confident
-                customer-facing reply.
+                {recommendedAction}
               </p>
 
               <p>
@@ -612,6 +549,7 @@ export function AiDraftPanel({ ticketId }: Props) {
                 <textarea
                   id="copilot-reply"
                   className="ai-draft-textarea"
+                  disabled={terminal || isSending || isEvaluating}
                   value={draft}
                   onChange={(event) =>
                     setDraft(
@@ -643,7 +581,7 @@ export function AiDraftPanel({ ticketId }: Props) {
                     handleSendDraft
                   }
                   disabled={
-                    isSending ||
+                    !runId || terminal || isGenerating || isSending ||
                     isEvaluating ||
                     !draft.trim()
                   }
@@ -710,7 +648,7 @@ export function AiDraftPanel({ ticketId }: Props) {
                 <button
                   type="button"
                   className="siq-button"
-                  disabled={isEvaluating}
+                  disabled={terminal || isGenerating || isSending || isEvaluating}
                   onClick={
                     handleRejectCopilot
                   }
@@ -789,7 +727,7 @@ export function AiDraftPanel({ ticketId }: Props) {
                       <strong>
                         {
                           source.documentName
-                        }
+                        }{source.versionNumber ? ` · v${source.versionNumber}` : ""}
                       </strong>
 
                       <small>
@@ -806,10 +744,7 @@ export function AiDraftPanel({ ticketId }: Props) {
                   </div>
 
                   <span className="siq-badge">
-                    Score{" "}
-                    {formatScore(
-                      source.score
-                    )}
+                    Selected source
                   </span>
                 </div>
 
@@ -877,14 +812,6 @@ function searchModeClass(
   }
 
   return "siq-badge-slate";
-}
-
-function formatScore(score: number) {
-  if (Number.isInteger(score)) {
-    return score;
-  }
-
-  return score.toFixed(2);
 }
 
 function formatLabel(value: string) {

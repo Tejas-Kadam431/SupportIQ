@@ -15,7 +15,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16-alpine
+        image: pgvector/pgvector:0.8.6-pg16
         env:
           POSTGRES_USER: supportiq
           POSTGRES_PASSWORD: supportiq
@@ -39,6 +39,7 @@ jobs:
           --health-retries=5
 
     env:
+      SUPPORTIQ_TEST_PGVECTOR: "1"
       NODE_ENV: test
       PORT: 4000
       CLIENT_URL: http://localhost:5173
@@ -86,3 +87,6 @@ jobs:
 
       - name: Build client
         run: pnpm --dir apps/client build
+
+      - name: Run client tests
+        run: pnpm --dir apps/client exec vitest run --pool=threads --maxWorkers=1
