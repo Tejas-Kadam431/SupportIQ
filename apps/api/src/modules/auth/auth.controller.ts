@@ -10,9 +10,8 @@ import {
 } from "./auth.service.js";
 
 const REFRESH_COOKIE_NAME = "supportiq_refresh_token";
-const REFRESH_COOKIE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 
-function getRefreshCookieOptions(): CookieOptions {
+function getRefreshCookieOptions(expiresAt: Date): CookieOptions {
   const isProduction = process.env.NODE_ENV === "production";
 
   return {
@@ -20,7 +19,7 @@ function getRefreshCookieOptions(): CookieOptions {
     secure: isProduction,
     sameSite: isProduction ? "none" : "lax",
     path: "/",
-    maxAge: REFRESH_COOKIE_MAX_AGE
+    maxAge: Math.max(0, expiresAt.getTime() - Date.now())
   };
 }
 
@@ -35,8 +34,8 @@ function getClearRefreshCookieOptions(): CookieOptions {
   };
 }
 
-function setRefreshTokenCookie(res: Response, refreshToken: string) {
-  res.cookie(REFRESH_COOKIE_NAME, refreshToken, getRefreshCookieOptions());
+function setRefreshTokenCookie(res: Response, refreshToken: string, expiresAt: Date) {
+  res.cookie(REFRESH_COOKIE_NAME, refreshToken, getRefreshCookieOptions(expiresAt));
 }
 
 function clearRefreshTokenCookie(res: Response) {
@@ -50,7 +49,7 @@ function getRefreshTokenFromRequest(req: Request) {
 export async function register(req: Request, res: Response) {
   const result = await registerUser(req.body);
 
-  setRefreshTokenCookie(res, result.refreshToken);
+  setRefreshTokenCookie(res, result.refreshToken, result.refreshExpiresAt);
 
   return res.status(201).json({
     message: "Registered successfully",
@@ -64,7 +63,7 @@ export async function register(req: Request, res: Response) {
 export async function login(req: Request, res: Response) {
   const result = await loginUser(req.body);
 
-  setRefreshTokenCookie(res, result.refreshToken);
+  setRefreshTokenCookie(res, result.refreshToken, result.refreshExpiresAt);
 
   return res.status(200).json({
     message: "Logged in successfully",
@@ -83,7 +82,7 @@ export async function refresh(req: Request, res: Response) {
 
   const result = await refreshAccessToken(refreshToken);
 
-  setRefreshTokenCookie(res, result.refreshToken);
+  setRefreshTokenCookie(res, result.refreshToken, result.refreshExpiresAt);
 
   return res.status(200).json({
     message: "Token refreshed successfully",

@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { HistoryPages } from "../../components/HistoryPages";
 import { useListTicketActivityQuery } from "./activityApi";
 import type { ActivityType } from "./activityApi";
 import "./tickets.css";
@@ -27,11 +29,12 @@ const activityIcons: Record<ActivityType, string> = {
 };
 
 export function ActivityTimeline({ ticketId }: Props) {
+  const [page, setPage] = useState(1);
   const {
     data,
     isLoading,
     isError
-  } = useListTicketActivityQuery(ticketId);
+  } = useListTicketActivityQuery({ticketId,page});
 
   const activities = data?.data.activities ?? [];
 
@@ -82,6 +85,7 @@ export function ActivityTimeline({ ticketId }: Props) {
           </article>
         ))}
       </div>
+      <HistoryPages page={page} count={activities.length} onChange={setPage}/>
     </section>
   );
 }

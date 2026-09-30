@@ -25,7 +25,7 @@ export async function listNotesHandler(req: AuthenticatedRequest, res: Response)
   const userId = getUserId(req);
   const ticketId = getParam(req, "ticketId");
 
-  const notes = await listInternalNotes(userId, ticketId);
+  const notes = await listInternalNotes(userId, ticketId, req.query.page ?? 1);
 
   return res.status(200).json({
     data: {

@@ -1,0 +1,28 @@
+import { generateAiDraftReply } from "../modules/ai/ai.service.js";
+import { generateWithProviders } from "../modules/ai/ai.provider.js";
+import { searchKnowledgeBase } from "../modules/knowledge-base/kb.service.js";
+import { fuseCandidates } from "../modules/knowledge-base/kb.retrieval.js";
+import { row } from "./fixtures/evidence.fixtures.js";
+const mockCreate = jest.fn(async ({ data }) => ({ ...data, id: "run" }));
+jest.mock("../config/prisma.js", () => ({ prisma: { ticket: { findUnique: async () => ({ id: "ticket", organizationId: "org", customerId: "customer", title: "Refund", description: "Refund policy", status: "OPEN", priority: "LOW", customer: { name: "Customer" }, messages: [] }) }, $transaction: async (fn: Function) => fn({ copilotRun: { create: (x: unknown) => mockCreate(x) }, activityLog: { create: async () => ({}) } }) } }));
+jest.mock("../modules/ai/ai.decision.js", () => ({}));
+jest.mock("../modules/tickets/ticket.service.js", () => ({ getTicketOrThrow: async () => ({ ticket: { id: "ticket" }, membership: { role: "AGENT" } }) }));
+jest.mock("../modules/organizations/org.transaction.js", () => ({ lockOrganization: async () => { }, currentMembership: async () => ({ role: "AGENT" }) }));
+jest.mock("../common/middleware/demoReadOnly.middleware.js", () => ({ isDemoReadonlyUserId: async () => false }));
+jest.mock("../modules/knowledge-base/kb.service.js", () => ({ searchKnowledgeBase: jest.fn() }));
+jest.mock("../modules/ai/ai.provider.js", () => ({ generateWithProviders: jest.fn() }));
+beforeEach(() => { jest.clearAllMocks(); });
+test.each(["INSUFFICIENT_KNOWLEDGE", "NEEDS_CUSTOMER_INFO", "CONFLICTING_KNOWLEDGE", "RETRIEVAL_DEGRADED"])("%s does not invoke provider or customer fallback", async (expected) => {
+    const rows = expected === "NEEDS_CUSTOMER_INFO" ? [row("a", "Refunds require order number and purchase date.")] : expected === "CONFLICTING_KNOWLEDGE" ? [row("a", "Refund window is 30 days"), row("b", "Refund window is 60 days")] : [row("weak", "Unrelated", 0.3)];
+    const fusion = fuseCandidates(rows, []);
+    (searchKnowledgeBase as jest.Mock).mockResolvedValue({ query: "refund", mode: "hybrid", ...fusion, diagnostics: { semanticStatus: expected === "RETRIEVAL_DEGRADED" ? "VECTOR_FAILED" : "OK", lexicalStatus: "OK" } });
+    const result = await generateAiDraftReply("agent", "ticket", { tone: "PROFESSIONAL" });
+    expect(result.evidenceDecision).toBe(expected);
+    expect(result.suggestedReply).toBeNull();
+    expect(result.draft).toBe("");
+    expect(generateWithProviders).not.toHaveBeenCalled();
+    const saved = mockCreate.mock.calls[0][0].data;
+    expect(saved.providerMetadata.providerCallAttempted).toBe(false);
+    expect(saved.generationPath).toBe("SKIPPED_EVIDENCE");
+    expect(saved.outputSnapshot.generatedDraft).toBeNull();
+});

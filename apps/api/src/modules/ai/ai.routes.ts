@@ -5,16 +5,23 @@ import { validate } from "../../common/middleware/validate.middleware.js";
 import { asyncHandler } from "../../common/utils/asyncHandler.js";
 import {
   evaluateCopilotHandler,
+  sendCopilotHandler,
+  getCopilotRunHandler,
   generateAiDraftHandler
 } from "./ai.controller.js";
 import {
   evaluateCopilotSchema,
+  sendCopilotSchema,
+  copilotRunSchema,
   generateAiDraftSchema
 } from "./ai.schema.js";
 
 export const aiRoutes = Router();
 
 aiRoutes.use(authenticate);
+
+aiRoutes.get("/:ticketId/copilot-runs/:runId", validate(copilotRunSchema), asyncHandler(getCopilotRunHandler));
+aiRoutes.post("/:ticketId/copilot-runs/:runId/send", blockDemoWrites(), validate(sendCopilotSchema), asyncHandler(sendCopilotHandler));
 
 aiRoutes.post(
   "/:ticketId/ai-draft",

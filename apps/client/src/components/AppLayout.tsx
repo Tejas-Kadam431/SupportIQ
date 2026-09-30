@@ -7,6 +7,7 @@ import { disconnectSocket } from "../features/realtime/socketClient";
 import "./appLayout.css";
 
 const navItems = [
+  {to:"/quality",label:"AI Quality",icon:"◈"},
   {
     to: "/dashboard",
     label: "Dashboard",
@@ -43,8 +44,8 @@ export function AppLayout() {
   async function handleLogout() {
     try {
       await logout().unwrap();
-    } catch (error) {
-      console.error("Logout request failed:", error);
+    } catch {
+      console.warn("SupportIQ operation failed; see the on-screen recovery message.");
     } finally {
       disconnectSocket();
       dispatch(clearCredentials());

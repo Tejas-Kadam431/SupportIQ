@@ -33,7 +33,7 @@ export function DocumentUpload({ orgId }: Props) {
       }).unwrap();
 
       setSuccessMessage(
-        "Document uploaded. Background processing will prepare it for search."
+        "Document uploaded. Background processing will prepare v1. Publish it from version history when ready."
       );
 
       setSelectedFile(null);
@@ -42,7 +42,7 @@ export function DocumentUpload({ orgId }: Props) {
         fileInputRef.current.value = "";
       }
     } catch (error) {
-      console.error("Failed to upload document:", error);
+      console.warn("SupportIQ operation failed; see the on-screen recovery message.");
       setUploadError(getApiErrorMessage(error, "Failed to upload document."));
     }
   }

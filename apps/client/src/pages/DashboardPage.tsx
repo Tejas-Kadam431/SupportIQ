@@ -1,5 +1,4 @@
 import {
-  useEffect,
   useMemo,
   useState
 } from "react";
@@ -60,6 +59,7 @@ const EMPTY_AI_QUALITY: AiQualityData = {
 
   acceptanceRate: 0,
   abstentionRate: 0,
+  abstained: 0,
 
   failureReasons: {},
 
@@ -74,7 +74,7 @@ export function DashboardPage() {
   );
 
   const [
-    selectedOrgId,
+    chosenOrgId,
     setSelectedOrgId
   ] = useState("");
 
@@ -84,8 +84,8 @@ export function DashboardPage() {
     isError: isOrganizationsError
   } = useListOrganizationsQuery();
 
-  const organizations =
-    orgData?.data.organizations ?? [];
+  const organizations = useMemo(() => orgData?.data.organizations ?? [], [orgData]);
+  const selectedOrgId = organizations.some(item => item.organization.id === chosenOrgId) ? chosenOrgId : organizations[0]?.organization.id ?? "";
 
   const selectedOrg =
     organizations.find(
@@ -94,19 +94,6 @@ export function DashboardPage() {
         selectedOrgId
     );
 
-  useEffect(() => {
-    if (
-      !selectedOrgId &&
-      organizations.length > 0
-    ) {
-      setSelectedOrgId(
-        organizations[0].organization.id
-      );
-    }
-  }, [
-    organizations,
-    selectedOrgId
-  ]);
 
   const {
     data: dashboardData,
@@ -386,7 +373,7 @@ export function DashboardPage() {
               <div className="siq-card-header">
                 <div>
                   <h2 className="siq-card-title">
-                    AI Quality Loop
+                    AI Quality · last 30 days
                   </h2>
 
                   <p className="dashboard-card-subtitle">
@@ -404,6 +391,8 @@ export function DashboardPage() {
                 </span>
               </div>
 
+              <Link to="/quality">Open AI Quality, Knowledge Issues and Source Health</Link>
+              <p>Evaluation coverage: {aiQuality.evaluatedRuns} / {aiQuality.totalRuns} feedback-eligible runs</p>
               {/* QUALITY METRICS */}
 
               <div className="dashboard-ai-preview">
@@ -433,18 +422,17 @@ export function DashboardPage() {
                 </strong>
 
                 <span>
-                  Copilot abstains when
-                  verified evidence is
-                  insufficient.
+                  See AI Quality for separate missing-information, knowledge and retrieval-health outcomes.
                 </span>
               </div>
 
+              <p>Abstention: {aiQuality.abstained} / {aiQuality.totalRuns} runs. Acceptance: {aiQuality.accepted} / {aiQuality.evaluatedRuns} evaluated runs.</p>
               {/* KNOWLEDGE GAPS */}
 
               <div className="siq-card-header">
                 <div>
                   <h3 className="siq-card-title">
-                    Knowledge-gap signals
+                    Detected knowledge issues · lifetime
                   </h3>
 
                   <p className="dashboard-card-subtitle">
@@ -460,7 +448,7 @@ export function DashboardPage() {
                 .length === 0 ? (
                 <EmptyBlock
                   title="No knowledge gaps detected yet"
-                  text="Low-confidence, abstained, and rejected Copilot runs will surface here."
+                  text="Explicit knowledge failures appear after signal reconciliation."
                 />
               ) : (
                 <div className="dashboard-activity-list">
@@ -502,10 +490,7 @@ export function DashboardPage() {
                   </h3>
 
                   <p className="dashboard-card-subtitle">
-                    Sources associated
-                    with accepted versus
-                    edited or rejected
-                    Copilot responses.
+                    Version-level accepted uses and conservatively attributed knowledge flags.
                   </p>
                 </div>
               </div>
@@ -543,7 +528,7 @@ export function DashboardPage() {
                             {
                               source.problematicUses
                             }{" "}
-                            problematic
+                            knowledge flags
                           </p>
                         </div>
                       </article>

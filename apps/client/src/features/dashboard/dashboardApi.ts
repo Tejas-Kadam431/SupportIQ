@@ -73,6 +73,7 @@ export type AiQualityData = {
 
   acceptanceRate: number;
   abstentionRate: number;
+  abstained: number;
 
   failureReasons: Record<string, number>;
 

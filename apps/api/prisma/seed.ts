@@ -1,3 +1,6 @@
+import { assertDemoResetAllowed } from "./seedGuard.js";
+import { seedReliabilityLab } from "./seedReliability.js";
+import { createSeedKnowledge } from "./seedKnowledge.js";
 import {
   ActivityType,
   KnowledgeDocumentStatus,
@@ -15,19 +18,15 @@ function hoursAgo(hours: number) {
 }
 
 async function resetDatabase() {
-  await prisma.activityLog.deleteMany();
-  await prisma.internalNote.deleteMany();
-  await prisma.ticketMessage.deleteMany();
-  await prisma.ticket.deleteMany();
-  await prisma.knowledgeChunk.deleteMany();
-  await prisma.knowledgeDocument.deleteMany();
-  await prisma.organizationMember.deleteMany();
+  // Organization deletion is the explicit erasure boundary for immutable history.
   await prisma.organization.deleteMany();
   await prisma.refreshToken.deleteMany();
+  await prisma.refreshSession.deleteMany();
   await prisma.user.deleteMany();
 }
 
 async function main() {
+  assertDemoResetAllowed(process.env);
   await resetDatabase();
 
   const passwordHash = await hashPassword("password123");
@@ -266,7 +265,7 @@ async function main() {
     ]
   });
 
-  const passwordDoc = await prisma.knowledgeDocument.create({
+  const passwordDoc = await createSeedKnowledge(prisma, {
     data: {
       organizationId: organization.id,
       uploadedById: owner.id,
@@ -297,7 +296,7 @@ async function main() {
     }
   });
 
-  const billingDoc = await prisma.knowledgeDocument.create({
+  const billingDoc = await createSeedKnowledge(prisma, {
     data: {
       organizationId: organization.id,
       uploadedById: owner.id,
@@ -328,7 +327,7 @@ async function main() {
     }
   });
 
-  const securityDoc = await prisma.knowledgeDocument.create({
+  const securityDoc = await createSeedKnowledge(prisma, {
     data: {
       organizationId: organization.id,
       uploadedById: owner.id,
@@ -359,7 +358,7 @@ async function main() {
     }
   });
 
-  const apiDoc = await prisma.knowledgeDocument.create({
+  const apiDoc = await createSeedKnowledge(prisma, {
     data: {
       organizationId: organization.id,
       uploadedById: owner.id,
@@ -499,6 +498,7 @@ async function main() {
     ]
   });
 
+  await seedReliabilityLab(prisma, organization.id, owner.id, customerA.id);
   console.log("Demo seed completed successfully");
   console.log("Demo login: demo.owner@supportiq.app / password123");
   console.log(`Organization: ${organization.name}`);
@@ -507,7 +507,7 @@ async function main() {
 
 main()
   .catch((error) => {
-    console.error(error);
+    console.error("Demo seed failed; check guarded configuration and database availability.");
     process.exit(1);
   })
   .finally(async () => {

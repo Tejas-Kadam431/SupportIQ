@@ -23,42 +23,12 @@ const failureReasonSchema = z.enum([
   "OTHER"
 ]);
 
-export const evaluateCopilotSchema = z.object({
-  params: z.object({
-    ticketId: z.string().min(1),
-    runId: z.string().min(1)
-  }),
-
-  body: z
-    .object({
-      disposition: z.enum(["ACCEPTED", "EDITED", "REJECTED"]),
-      reason: failureReasonSchema.optional(),
-      finalMessage: z.string().trim().max(10000).optional()
-    })
-    .superRefine((value, ctx) => {
-      if (value.disposition === "REJECTED" && !value.reason) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["reason"],
-          message: "A rejection reason is required"
-        });
-      }
-
-      if (
-        value.disposition === "EDITED" &&
-        !value.finalMessage?.trim()
-      ) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["finalMessage"],
-          message: "The edited final message is required"
-        });
-      }
-    })
-});
-
-export type GenerateAiDraftInput =
-  z.infer<typeof generateAiDraftSchema>["body"];
-
-export type EvaluateCopilotInput =
-  z.infer<typeof evaluateCopilotSchema>["body"];
+const runParams = z.object({ ticketId: z.string().min(1), runId: z.string().min(1) });
+export const sendCopilotBody = z.object({ finalMessage: z.string().trim().min(1).max(5000) }).strict();
+export const sendCopilotSchema = z.object({ params: runParams, body: sendCopilotBody });
+export const copilotRunSchema = z.object({ params: runParams });
+export const rejectCopilotBody = z.object({ disposition: z.literal("REJECTED"), reason: failureReasonSchema }).strict();
+export const evaluateCopilotSchema = z.object({ params: runParams, body: rejectCopilotBody });
+export type GenerateAiDraftInput = z.infer<typeof generateAiDraftSchema>["body"];
+export type EvaluateCopilotInput = z.infer<typeof rejectCopilotBody>;
+export type SendCopilotInput = z.infer<typeof sendCopilotBody>;

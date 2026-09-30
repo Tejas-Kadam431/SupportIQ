@@ -89,7 +89,7 @@ export function KnowledgeSearch({ orgId }: Props) {
             <span>for “{submittedQuery}”</span>
           </div>
 
-          {results.map((result) => (
+          {results.map((result, index) => (
             <article key={result.id} className="kb-result-card">
               <div className="kb-result-header">
                 <div>
@@ -101,7 +101,7 @@ export function KnowledgeSearch({ orgId }: Props) {
                 </div>
 
                 <span className="siq-badge siq-badge-blue">
-                  Score {formatScore(result.score)}
+                  Rank {index + 1}
                 </span>
               </div>
 
@@ -112,9 +112,4 @@ export function KnowledgeSearch({ orgId }: Props) {
       )}
     </section>
   );
-}
-
-function formatScore(score: number) {
-  if (Number.isInteger(score)) return String(score);
-  return score.toFixed(2);
 }

@@ -176,7 +176,7 @@ export function TicketDetailsPage() {
         />
       </section>
 
-      <section className="siq-card ticket-actions-card">
+      {ticket.canUseStaffTools && <section className="siq-card ticket-actions-card">
         {actionError && <div role="alert" className="ticket-alert ticket-alert-error">{actionError}</div>}
         <div className="siq-card-header">
           <div>
@@ -207,7 +207,7 @@ export function TicketDetailsPage() {
             </select>
           </div>
 
-          <div>
+          {ticket.canAssign && <div>
             <label
               style={{
                 display: "block",
@@ -239,19 +239,19 @@ export function TicketDetailsPage() {
                 Unassign
               </button>
             </div>
-          </div>
+          </div>}
         </div>
-      </section>
+      </section>}
 
-      <AiDraftPanel ticketId={ticket.id} />
+      {ticket.canUseStaffTools && <AiDraftPanel ticketId={ticket.id} />}
 
       <section className="ticket-workspace-grid">
-        <MessageThread ticketId={ticket.id} />
+        <MessageThread key={"MessageThread-" + ticket.id} ticketId={ticket.id} />
 
-        <aside className="ticket-side-stack">
-          <InternalNotes ticketId={ticket.id} />
-          <ActivityTimeline ticketId={ticket.id} />
-        </aside>
+        {ticket.canUseStaffTools && <aside className="ticket-side-stack">
+          <InternalNotes key={"InternalNotes-" + ticket.id} ticketId={ticket.id} />
+          <ActivityTimeline key={"ActivityTimeline-" + ticket.id} ticketId={ticket.id} />
+        </aside>}
       </section>
     </main>
   );

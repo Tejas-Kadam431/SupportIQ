@@ -45,7 +45,7 @@ export function MembersPage() {
 
   const [removeMember, { isLoading: isRemoving }] = useRemoveMemberMutation();
 
-  const members = data?.data.members ?? [];
+  const members = useMemo(() => data?.data.members ?? [], [data]);
 
   const counts = useMemo(() => {
     return {
@@ -87,7 +87,7 @@ export function MembersPage() {
       setRole("AGENT");
       setMessage("Member added successfully.");
     } catch (error) {
-      console.error("Failed to add member:", error);
+      console.warn("SupportIQ operation failed; see the on-screen recovery message.");
       setFormError(
         getApiErrorMessage(
           error,
@@ -112,7 +112,7 @@ export function MembersPage() {
         role: nextRole
       }).unwrap();
     } catch (error) {
-      console.error("Failed to update role:", error);
+      console.warn("SupportIQ operation failed; see the on-screen recovery message.");
       setActionError(getApiErrorMessage(error, "Failed to update member role."));
     }
   }
@@ -131,7 +131,7 @@ export function MembersPage() {
         memberId
       }).unwrap();
     } catch (error) {
-      console.error("Failed to remove member:", error);
+      console.warn("SupportIQ operation failed; see the on-screen recovery message.");
       setActionError(getApiErrorMessage(error, "Failed to remove member."));
     }
   }

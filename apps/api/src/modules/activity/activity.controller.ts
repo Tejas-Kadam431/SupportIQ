@@ -28,7 +28,7 @@ export async function listTicketActivityHandler(
   const userId = getUserId(req);
   const ticketId = getParam(req, "ticketId");
 
-  const activities = await listTicketActivity(userId, ticketId);
+  const activities = await listTicketActivity(userId, ticketId, req.query.page ?? 1);
 
   return res.status(200).json({
     data: {

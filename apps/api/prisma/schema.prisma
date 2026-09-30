@@ -36,7 +36,17 @@ enum KnowledgeDocumentStatus {
   FAILED
 }
 
+enum KnowledgeVersionStatus {
+  UPLOADED
+  PROCESSING
+  READY
+  PUBLISHED
+  SUPERSEDED
+  FAILED
+}
+
 enum ActivityType {
+  KNOWLEDGE_VERSION_EVENT
   TICKET_CREATED
   TICKET_ASSIGNED
   STATUS_CHANGED
@@ -45,6 +55,7 @@ enum ActivityType {
   AI_REPLY_GENERATED
   DOCUMENT_UPLOADED
 }
+
 enum CopilotDisposition {
   ACCEPTED
   EDITED
@@ -76,6 +87,7 @@ model User {
   ownedOrganizations Organization[]       @relation("OrganizationOwner")
   memberships        OrganizationMember[]
   refreshTokens      RefreshToken[]
+  refreshSessions    RefreshSession[]
 
   customerTickets            Ticket[]            @relation("TicketCustomer")
   assignedTickets            Ticket[]            @relation("TicketAssignee")
@@ -90,11 +102,15 @@ model User {
 }
 
 model RefreshToken {
-  id        String    @id @default(cuid())
-  userId    String
-  tokenHash String
-  expiresAt DateTime
-  revokedAt DateTime?
+  id         String          @id @default(cuid())
+  userId     String
+  tokenHash  String
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  consumedAt DateTime?
+  // Null only for pre-session credentials, which require login again.
+  sessionId  String?
+  session    RefreshSession? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
 
@@ -102,9 +118,33 @@ model RefreshToken {
 
   @@index([userId])
   @@index([tokenHash])
+  @@index([sessionId])
+}
+
+enum RefreshRevokeReason {
+  LOGOUT
+  REUSE_DETECTED
+}
+
+model RefreshSession {
+  id           String               @id @default(cuid())
+  userId       String
+  createdAt    DateTime             @default(now())
+  lastUsedAt   DateTime             @default(now())
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  revokeReason RefreshRevokeReason?
+  user         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokens       RefreshToken[]
+
+  @@index([userId])
 }
 
 model Organization {
+  evaluationSuites      EvaluationSuite[]
+  evaluationExperiments EvaluationExperiment[]
+  knowledgeIssues       KnowledgeIssue[]
+
   id      String @id @default(cuid())
   name    String
   slug    String @unique
@@ -120,13 +160,15 @@ model Organization {
   activityLogs       ActivityLog[]
   knowledgeDocuments KnowledgeDocument[]
   knowledgeChunks    KnowledgeChunk[]
-  copilotRuns CopilotRun[]
+  copilotRuns        CopilotRun[]
 
   @@index([ownerId])
   @@index([slug])
 }
 
 model OrganizationMember {
+  knowledgeIssues KnowledgeIssue[]
+
   id             String @id @default(cuid())
   organizationId String
   userId         String
@@ -169,7 +211,7 @@ model Ticket {
   messages      TicketMessage[]
   internalNotes InternalNote[]
   activityLogs  ActivityLog[]
-  copilotRuns CopilotRun[]
+  copilotRuns   CopilotRun[]
 
   @@index([organizationId])
   @@index([customerId])
@@ -180,10 +222,11 @@ model Ticket {
 }
 
 model TicketMessage {
-  id       String @id @default(cuid())
-  ticketId String
-  senderId String
-  body     String
+  copilotEvaluation CopilotEvaluation?
+  id                String             @id @default(cuid())
+  ticketId          String
+  senderId          String
+  body              String
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -247,8 +290,9 @@ model KnowledgeDocument {
   sizeBytes    Int
   storagePath  String
 
-  status       KnowledgeDocumentStatus @default(UPLOADED)
-  errorMessage String?
+  status                KnowledgeDocumentStatus @default(UPLOADED)
+  errorMessage          String?
+  semanticIndexedChunks Int?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -256,7 +300,12 @@ model KnowledgeDocument {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   uploadedBy   User         @relation("KnowledgeDocumentUploader", fields: [uploadedById], references: [id], onDelete: Restrict)
 
-  chunks KnowledgeChunk[]
+  archivedAt                DateTime?
+  nextVersionNumber         Int                        @default(1)
+  currentPublishedVersionId String?                    @unique
+  currentPublishedVersion   KnowledgeDocumentVersion?  @relation("CurrentKnowledge", fields: [currentPublishedVersionId], references: [id], onDelete: NoAction)
+  versions                  KnowledgeDocumentVersion[] @relation("DocumentVersions")
+  chunks                    KnowledgeChunk[]
 
   @@index([organizationId])
   @@index([uploadedById])
@@ -264,10 +313,49 @@ model KnowledgeDocument {
   @@index([createdAt])
 }
 
+model KnowledgeDocumentVersion {
+  ingestion        KnowledgeIngestion?
+  sourceObject     KnowledgeSourceObject?
+  evaluationScopes EvaluationScopeVersion[]
+  candidateIssues  KnowledgeIssue[]
+  issueSources     KnowledgeIssueSource[]
+
+  id                    String                   @id @default(cuid())
+  documentId            String
+  versionNumber         Int
+  status                KnowledgeVersionStatus   @default(UPLOADED)
+  originalName          String
+  mimeType              String
+  sizeBytes             Int
+  storageRef            String
+  sourceHash            String?
+  contentHash           String?
+  extractedText         String?
+  createdByIdentity     String
+  createdAt             DateTime                 @default(now())
+  publishedAt           DateTime?
+  semanticIndexedChunks Int?
+  embeddingModel        String?
+  errorMessage          String?
+  processingToken       String?
+  leaseUntil            DateTime?
+  document              KnowledgeDocument        @relation("DocumentVersions", fields: [documentId], references: [id], onDelete: Cascade)
+  currentFor            KnowledgeDocument?       @relation("CurrentKnowledge")
+  chunks                KnowledgeChunk[]
+  sources               CopilotKnowledgeSource[]
+
+  @@unique([documentId, versionNumber])
+  @@index([documentId, status])
+}
+
 model KnowledgeChunk {
-  id             String @id @default(cuid())
-  documentId     String
-  organizationId String
+  documentVersionId String
+  contentHash       String
+  version           KnowledgeDocumentVersion @relation(fields: [documentVersionId], references: [id], onDelete: Cascade)
+  sources           CopilotKnowledgeSource[]
+  id                String                   @id @default(cuid())
+  documentId        String
+  organizationId    String
 
   content    String
   chunkIndex Int
@@ -279,17 +367,52 @@ model KnowledgeChunk {
   document     KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
   organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  @@unique([documentId, chunkIndex])
+  @@unique([documentVersionId, chunkIndex])
+  @@index([documentVersionId])
   @@index([documentId])
   @@index([organizationId])
   @@index([createdAt])
 }
 
+model CopilotKnowledgeSource {
+  copilotRunId      String
+  documentVersionId String
+  chunkId           String
+  run               CopilotRun               @relation(fields: [copilotRunId], references: [id], onDelete: Cascade)
+  version           KnowledgeDocumentVersion @relation(fields: [documentVersionId], references: [id], onDelete: NoAction)
+  chunk             KnowledgeChunk           @relation(fields: [chunkId], references: [id], onDelete: NoAction)
+
+  @@id([copilotRunId, chunkId])
+  @@index([documentVersionId])
+  @@index([chunkId])
+}
+
 model CopilotRun {
-  id             String  @id @default(cuid())
-  organizationId String
-  ticketId       String
-  triggeredById  String?
+  evaluationCases EvaluationCase[]
+  knowledgeSignal KnowledgeIssueSignal?
+
+  knowledgeSources      CopilotKnowledgeSource[]
+  triggeredByIdentity   String?
+  provenanceVersion     Int                      @default(0)
+  status                String                   @default("LEGACY")
+  model                 String?
+  promptVersion         String?
+  retrievalVersion      String?
+  evidencePolicyVersion String?
+  generationPath        String?
+  generationDurationMs  Int?
+  startedAt             DateTime?
+  completedAt           DateTime?
+  contextFingerprint    String?
+  inputSnapshot         Json?
+  promptSnapshot        Json?
+  outputSnapshot        Json?
+  generationConfig      Json?
+  providerMetadata      Json?
+  id                    String                   @id @default(cuid())
+  organizationId        String
+  ticketId              String
+  triggeredById         String?
 
   provider   String
   confidence String
@@ -316,6 +439,7 @@ model CopilotRun {
 
   evaluation CopilotEvaluation?
 
+  @@index([organizationId, createdAt])
   @@index([organizationId])
   @@index([ticketId])
   @@index([triggeredById])
@@ -324,12 +448,19 @@ model CopilotRun {
 }
 
 model CopilotEvaluation {
-  id           String @id @default(cuid())
-  copilotRunId String @unique
-  evaluatorId  String?
+  integrityVersion  Int            @default(0)
+  messageId         String?        @unique
+  message           TicketMessage? @relation(fields: [messageId], references: [id], onDelete: NoAction)
+  originalReply     String?
+  evaluatorIdentity String?
+  originalCharCount Int?
+  finalCharCount    Int?
+  id                String         @id @default(cuid())
+  copilotRunId      String         @unique
+  evaluatorId       String?
 
-  disposition CopilotDisposition
-  reason      CopilotFailureReason?
+  disposition  CopilotDisposition
+  reason       CopilotFailureReason?
   finalMessage String?
 
   createdAt DateTime @default(now())
@@ -342,4 +473,256 @@ model CopilotEvaluation {
   @@index([disposition])
   @@index([reason])
   @@index([createdAt])
+}
+
+enum KnowledgeIssueStatus {
+  DETECTED
+  REVIEWING
+  FIX_PROPOSED
+  PUBLISHED
+  VERIFIED
+  DISMISSED
+}
+
+model KnowledgeIssue {
+  evaluationSuites    EvaluationSuite[]
+  id                  String                    @id @default(cuid())
+  organizationId      String
+  groupingKey         String
+  normalizedTopic     String
+  title               String
+  reason              String
+  status              KnowledgeIssueStatus      @default(DETECTED)
+  revision            Int                       @default(0)
+  assigneeMemberId    String?
+  candidateVersionId  String?
+  fixNote             String?
+  publishedAt         DateTime?
+  dismissalReason     String?
+  dismissedAt         DateTime?
+  dismissedByIdentity String?
+  createdAt           DateTime                  @default(now())
+  updatedAt           DateTime                  @updatedAt
+  organization        Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assignee            OrganizationMember?       @relation(fields: [assigneeMemberId], references: [id], onDelete: SetNull)
+  candidateVersion    KnowledgeDocumentVersion? @relation(fields: [candidateVersionId], references: [id], onDelete: NoAction)
+  signals             KnowledgeIssueSignal[]
+  history             KnowledgeIssueHistory[]
+
+  @@unique([organizationId, groupingKey])
+  @@index([organizationId, status, updatedAt])
+  @@index([assigneeMemberId])
+  @@index([candidateVersionId])
+}
+
+model KnowledgeIssueSignal {
+  id                String                 @id @default(cuid())
+  issueId           String
+  copilotRunId      String                 @unique
+  reason            String
+  classifierVersion String
+  occurredAt        DateTime
+  createdAt         DateTime               @default(now())
+  issue             KnowledgeIssue         @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  run               CopilotRun             @relation(fields: [copilotRunId], references: [id], onDelete: Cascade)
+  sources           KnowledgeIssueSource[]
+
+  @@index([issueId, occurredAt])
+}
+
+model KnowledgeIssueSource {
+  signalId          String
+  documentVersionId String
+  attributed        Boolean                  @default(false)
+  signal            KnowledgeIssueSignal     @relation(fields: [signalId], references: [id], onDelete: Cascade)
+  version           KnowledgeDocumentVersion @relation(fields: [documentVersionId], references: [id], onDelete: NoAction)
+
+  @@id([signalId, documentVersionId])
+  @@index([documentVersionId])
+}
+
+model KnowledgeIssueHistory {
+  id            String         @id @default(cuid())
+  issueId       String
+  actorIdentity String?
+  event         String
+  metadata      Json
+  createdAt     DateTime       @default(now())
+  issue         KnowledgeIssue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@index([issueId, createdAt])
+}
+
+enum ExperimentStatus {
+  DRAFT
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum ExperimentPurpose {
+  PRE_PUBLICATION
+  POST_PUBLICATION_VERIFICATION
+  GENERAL_COMPARISON
+}
+
+enum ReplayClassification {
+  IMPROVED
+  UNCHANGED
+  REGRESSED
+  INCONCLUSIVE
+  ERROR
+}
+
+model EvaluationSuite {
+  id             String                 @id @default(cuid())
+  organizationId String
+  issueId        String?
+  name           String
+  actorIdentity  String
+  createdAt      DateTime               @default(now())
+  sampling       Json
+  organization   Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  issue          KnowledgeIssue?        @relation(fields: [issueId], references: [id], onDelete: NoAction)
+  cases          EvaluationCase[]
+  experiments    EvaluationExperiment[]
+
+  @@index([organizationId, createdAt])
+  @@index([issueId])
+}
+
+model EvaluationCase {
+  id                     String             @id @default(cuid())
+  suiteId                String
+  historicalCopilotRunId String
+  kind                   String
+  input                  Json
+  baseline               Json
+  createdAt              DateTime           @default(now())
+  suite                  EvaluationSuite    @relation(fields: [suiteId], references: [id], onDelete: Cascade)
+  run                    CopilotRun         @relation(fields: [historicalCopilotRunId], references: [id], onDelete: NoAction)
+  results                EvaluationResult[]
+
+  @@unique([suiteId, historicalCopilotRunId])
+  @@index([historicalCopilotRunId])
+}
+
+model EvaluationExperiment {
+  id             String                   @id @default(cuid())
+  organizationId String
+  suiteId        String
+  name           String
+  actorIdentity  String
+  purpose        ExperimentPurpose
+  status         ExperimentStatus         @default(DRAFT)
+  configuration  Json
+  summary        Json
+  errorCode      String?
+  createdAt      DateTime                 @default(now())
+  startedAt      DateTime?
+  completedAt    DateTime?
+  organization   Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  suite          EvaluationSuite          @relation(fields: [suiteId], references: [id], onDelete: Cascade)
+  scope          EvaluationScopeVersion[]
+  results        EvaluationResult[]
+
+  @@index([organizationId, status, createdAt])
+  @@index([organizationId, purpose, createdAt])
+  @@index([suiteId])
+}
+
+model EvaluationScopeVersion {
+  experimentId      String
+  documentVersionId String
+  override          Boolean
+  contentHash       String
+  experiment        EvaluationExperiment     @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  version           KnowledgeDocumentVersion @relation(fields: [documentVersionId], references: [id], onDelete: NoAction)
+
+  @@id([experimentId, documentVersionId])
+  @@index([documentVersionId])
+}
+
+model EvaluationResult {
+  id             String               @id @default(cuid())
+  experimentId   String
+  caseId         String
+  classification ReplayClassification
+  candidate      Json
+  comparison     Json
+  durationMs     Int
+  createdAt      DateTime             @default(now())
+  experiment     EvaluationExperiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  case           EvaluationCase       @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@unique([experimentId, caseId])
+  @@index([experimentId, classification])
+}
+
+model KnowledgeSourceObject {
+  versionId String                   @id
+  objectKey String                   @unique
+  backend   String
+  version   KnowledgeDocumentVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+}
+
+model KnowledgeIngestion {
+  versionId      String                      @id
+  generation     Int                         @default(1)
+  requestId      String
+  stage          String                      @default("QUEUED")
+  attempts       Int                         @default(0)
+  retryable      Boolean                     @default(true)
+  errorCategory  String?
+  heartbeatAt    DateTime?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  chunksTotal    Int                         @default(0)
+  chunksEmbedded Int                         @default(0)
+  embeddingModel String?
+  lexicalReady   Boolean                     @default(false)
+  semanticReady  Boolean                     @default(false)
+  updatedAt      DateTime                    @updatedAt
+  version        KnowledgeDocumentVersion    @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  history        KnowledgeIngestionAttempt[]
+  outbox         KnowledgeOutbox[]
+
+  @@index([stage, updatedAt])
+}
+
+model KnowledgeIngestionAttempt {
+  id            String             @id @default(cuid())
+  versionId     String
+  generation    Int
+  attempt       Int
+  jobId         String
+  requestId     String
+  stage         String
+  errorCategory String?
+  retryable     Boolean            @default(true)
+  startedAt     DateTime           @default(now())
+  completedAt   DateTime?
+  durationMs    Int?
+  ingestion     KnowledgeIngestion @relation(fields: [versionId], references: [versionId], onDelete: Cascade)
+
+  @@unique([versionId, attempt])
+}
+
+model KnowledgeOutbox {
+  id            String             @id @default(cuid())
+  versionId     String
+  generation    Int
+  requestId     String
+  createdAt     DateTime           @default(now())
+  availableAt   DateTime           @default(now())
+  dispatchedAt  DateTime?
+  claimToken    String?
+  claimUntil    DateTime?
+  attempts      Int                @default(0)
+  errorCategory String?
+  ingestion     KnowledgeIngestion @relation(fields: [versionId], references: [versionId], onDelete: Cascade)
+
+  @@unique([versionId, generation])
+  @@index([dispatchedAt, availableAt])
 }

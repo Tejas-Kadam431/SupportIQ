@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useListOrganizationsQuery } from "../organizations/orgApi";
 import {
@@ -22,7 +22,7 @@ const statuses: (TicketStatus | "")[] = [
 const priorities: (TicketPriority | "")[] = ["", "LOW", "MEDIUM", "HIGH", "URGENT"];
 
 export function TicketsPage() {
-  const [selectedOrgId, setSelectedOrgId] = useState("");
+  const [chosenOrgId, setSelectedOrgId] = useState("");
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<TicketStatus | "">("");
@@ -35,12 +35,8 @@ export function TicketsPage() {
   } = useListOrganizationsQuery();
 
   const organizations = orgData?.data.organizations ?? [];
+  const selectedOrgId = organizations.some(item => item.organization.id === chosenOrgId) ? chosenOrgId : organizations[0]?.organization.id ?? "";
 
-  useEffect(() => {
-    if (!selectedOrgId && organizations.length > 0) {
-      setSelectedOrgId(organizations[0].organization.id);
-    }
-  }, [organizations, selectedOrgId]);
 
   const {
     data: ticketData,

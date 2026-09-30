@@ -1,3 +1,7 @@
+import { clearIssueAssignments } from "../knowledge-issues/issue.service.js";
+import { lockOrganization, currentMembership } from "./org.transaction.js";
+import { isAssignableRole } from "../tickets/assignment.policy.js";
+import { unassignActiveTickets } from "../tickets/assignment.service.js";
 import { prisma } from "../../config/prisma.js";
 import { AppError } from "../../common/errors/AppError.js";
 import type {
@@ -194,56 +198,57 @@ export async function addOrganizationMember(
   orgId: string,
   input: AddMemberInput
 ) {
-  const actorMembership = await assertOrgRole(userId, orgId, [
-    "OWNER",
-    "ADMIN"
-  ]);
+  return prisma.$transaction(async tx => {
+    await lockOrganization(tx, orgId);
+    const actorMembership = await currentMembership(tx, userId, orgId);
+    if (actorMembership.role !== "OWNER" && actorMembership.role !== "ADMIN") throw new AppError("Insufficient permissions", 403);
 
-  const actorRole = actorMembership.role as Role;
-  const nextRole = input.role as Role;
+    const actorRole = actorMembership.role as Role;
+    const nextRole = input.role as Role;
 
-  assertActorCanAssignRole(actorRole, nextRole);
+    assertActorCanAssignRole(actorRole, nextRole);
 
-  const userToAdd = await prisma.user.findUnique({
-    where: {
-      email: input.email.toLowerCase()
-    }
-  });
-
-  if (!userToAdd) {
-    throw new AppError("User with this email does not exist", 404);
-  }
-
-  const existingMembership = await prisma.organizationMember.findUnique({
-    where: {
-      organizationId_userId: {
-        organizationId: orgId,
-        userId: userToAdd.id
+    const userToAdd = await tx.user.findUnique({
+      where: {
+        email: input.email.toLowerCase()
       }
+    });
+
+    if (!userToAdd) {
+      throw new AppError("User with this email does not exist", 404);
     }
-  });
 
-  if (existingMembership) {
-    throw new AppError("User is already a member of this organization", 409);
-  }
-
-  return prisma.organizationMember.create({
-    data: {
-      organizationId: orgId,
-      userId: userToAdd.id,
-      role: nextRole
-    },
-    include: {
-      user: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          avatarUrl: true
+    const existingMembership = await tx.organizationMember.findUnique({
+      where: {
+        organizationId_userId: {
+          organizationId: orgId,
+          userId: userToAdd.id
         }
       }
+    });
+
+    if (existingMembership) {
+      throw new AppError("User is already a member of this organization", 409);
     }
-  });
+
+    return tx.organizationMember.create({
+      data: {
+        organizationId: orgId,
+        userId: userToAdd.id,
+        role: nextRole
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            avatarUrl: true
+          }
+        }
+      }
+    });
+  }, { isolationLevel: "ReadCommitted" });
 }
 
 export async function updateOrganizationMemberRole(
@@ -252,49 +257,54 @@ export async function updateOrganizationMemberRole(
   memberId: string,
   input: UpdateMemberRoleInput
 ) {
-  const actorMembership = await assertOrgRole(userId, orgId, [
-    "OWNER",
-    "ADMIN"
-  ]);
+  return prisma.$transaction(async tx => {
+    await lockOrganization(tx, orgId);
+    const actorMembership = await currentMembership(tx, userId, orgId);
+    if (actorMembership.role !== "OWNER" && actorMembership.role !== "ADMIN") throw new AppError("Insufficient permissions", 403);
 
-  const actorRole = actorMembership.role as Role;
-  const nextRole = input.role as Role;
+    const actorRole = actorMembership.role as Role;
+    const nextRole = input.role as Role;
 
-  assertActorCanAssignRole(actorRole, nextRole);
+    assertActorCanAssignRole(actorRole, nextRole);
 
-  const targetMembership = await prisma.organizationMember.findUnique({
-    where: {
-      id: memberId
+    const targetMembership = await tx.organizationMember.findUnique({
+      where: {
+        id: memberId
+      }
+    });
+
+    if (!targetMembership || targetMembership.organizationId !== orgId) {
+      throw new AppError("Member not found", 404);
     }
-  });
 
-  if (!targetMembership || targetMembership.organizationId !== orgId) {
-    throw new AppError("Member not found", 404);
-  }
+    const targetRole = targetMembership.role as Role;
 
-  const targetRole = targetMembership.role as Role;
+    assertRoleIsNotOwner(targetRole);
+    assertActorCanManageTargetRole(actorRole, targetRole);
 
-  assertRoleIsNotOwner(targetRole);
-  assertActorCanManageTargetRole(actorRole, targetRole);
-
-  return prisma.organizationMember.update({
-    where: {
-      id: memberId
-    },
-    data: {
-      role: nextRole
-    },
-    include: {
-      user: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          avatarUrl: true
+    if (!isAssignableRole(nextRole)) {
+      await unassignActiveTickets(tx, orgId, targetMembership.userId, userId, "ROLE_BECAME_INELIGIBLE");
+      await clearIssueAssignments(tx, orgId, targetMembership.userId, userId);
+    }
+    return tx.organizationMember.update({
+      where: {
+        id: memberId
+      },
+      data: {
+        role: nextRole
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            avatarUrl: true
+          }
         }
       }
-    }
-  });
+    });
+  }, { isolationLevel: "ReadCommitted" });
 }
 
 export async function removeOrganizationMember(
@@ -302,33 +312,36 @@ export async function removeOrganizationMember(
   orgId: string,
   memberId: string
 ) {
-  const actorMembership = await assertOrgRole(userId, orgId, [
-    "OWNER",
-    "ADMIN"
-  ]);
+  return prisma.$transaction(async tx => {
+    await lockOrganization(tx, orgId);
+    const actorMembership = await currentMembership(tx, userId, orgId);
+    if (actorMembership.role !== "OWNER" && actorMembership.role !== "ADMIN") throw new AppError("Insufficient permissions", 403);
 
-  const actorRole = actorMembership.role as Role;
+    const actorRole = actorMembership.role as Role;
 
-  const targetMembership = await prisma.organizationMember.findUnique({
-    where: {
-      id: memberId
+    const targetMembership = await tx.organizationMember.findUnique({
+      where: {
+        id: memberId
+      }
+    });
+
+    if (!targetMembership || targetMembership.organizationId !== orgId) {
+      throw new AppError("Member not found", 404);
     }
-  });
 
-  if (!targetMembership || targetMembership.organizationId !== orgId) {
-    throw new AppError("Member not found", 404);
-  }
+    const targetRole = targetMembership.role as Role;
 
-  const targetRole = targetMembership.role as Role;
+    assertRoleIsNotOwner(targetRole);
+    assertActorCanManageTargetRole(actorRole, targetRole);
 
-  assertRoleIsNotOwner(targetRole);
-  assertActorCanManageTargetRole(actorRole, targetRole);
-
-  await prisma.organizationMember.delete({
-    where: {
-      id: memberId
-    }
-  });
+    await unassignActiveTickets(tx, orgId, targetMembership.userId, userId, "MEMBER_REMOVED");
+    await clearIssueAssignments(tx, orgId, targetMembership.userId, userId);
+    await tx.organizationMember.delete({
+      where: {
+        id: memberId
+      }
+    });
+  }, { isolationLevel: "ReadCommitted" });
 }
 
 export async function assertOrgMember(userId: string, orgId: string) {

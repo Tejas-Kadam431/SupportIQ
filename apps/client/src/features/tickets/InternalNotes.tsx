@@ -1,3 +1,4 @@
+import { HistoryPages } from "../../components/HistoryPages";
 import { useState } from "react";
 import {
   useCreateNoteMutation,
@@ -11,6 +12,7 @@ type Props = {
 };
 
 export function InternalNotes({ ticketId }: Props) {
+  const [page, setPage] = useState(1);
   const [body, setBody] = useState("");
   const [noteError, setNoteError] = useState("");
 
@@ -18,7 +20,7 @@ export function InternalNotes({ ticketId }: Props) {
     data,
     isLoading,
     isError
-  } = useListNotesQuery(ticketId);
+  } = useListNotesQuery({ticketId,page});
 
   const [createNote, { isLoading: isAdding }] = useCreateNoteMutation();
 
@@ -41,7 +43,7 @@ export function InternalNotes({ ticketId }: Props) {
 
       setBody("");
     } catch (error) {
-      console.error("Failed to add internal note:", error);
+      console.warn("SupportIQ operation failed; see the on-screen recovery message.");
       setNoteError(
         getApiErrorMessage(error, "Failed to add internal note. Please try again.")
       );
@@ -121,6 +123,7 @@ export function InternalNotes({ ticketId }: Props) {
           </button>
         </form>
       )}
+      <HistoryPages page={page} count={notes.length} onChange={setPage}/>
     </section>
   );
 }

@@ -1,3 +1,5 @@
+import { lockOrganization, currentMembership } from "../organizations/org.transaction.js";
+import { historyPage } from "../../common/pagination.js";
 import { prisma } from "../../config/prisma.js";
 import { AppError } from "../../common/errors/AppError.js";
 import { getTicketOrThrow } from "../tickets/ticket.service.js";
@@ -11,7 +13,7 @@ function assertStaffRole(role: Role) {
   }
 }
 
-export async function listInternalNotes(userId: string, ticketId: string) {
+export async function listInternalNotes(userId: string, ticketId: string, page: unknown = 1) {
   const { membership } = await getTicketOrThrow(userId, ticketId);
   const role = membership.role as Role;
 
@@ -31,10 +33,9 @@ export async function listInternalNotes(userId: string, ticketId: string) {
         }
       }
     },
-    orderBy: {
-      createdAt: "asc"
-    }
-  });
+    ...historyPage(page),
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }]
+  }).then(rows => rows.reverse());
 }
 
 export async function createInternalNote(
@@ -48,6 +49,8 @@ export async function createInternalNote(
   assertStaffRole(role);
 
   const note = await prisma.$transaction(async (tx) => {
+    await lockOrganization(tx, ticket.organizationId);
+    assertStaffRole((await currentMembership(tx,userId,ticket.organizationId)).role);
     const createdNote = await tx.internalNote.create({
       data: {
         ticketId,

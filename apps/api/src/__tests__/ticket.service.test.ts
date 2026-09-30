@@ -1,6 +1,7 @@
+import { createInternalNote } from "../modules/notes/note.service.js";
 import { prisma } from "../config/prisma.js";
 import { assertOrgMember } from "../modules/organizations/org.service.js";
-import { assignTicket, updateTicketStatus } from "../modules/tickets/ticket.service.js";
+import { assignTicket, updateTicketStatus, createTicket } from "../modules/tickets/ticket.service.js";
 import { createTicketMessage } from "../modules/messages/message.service.js";
 import { emitTicketMessageCreated } from "../modules/realtime/realtime.service.js";
 import express from "express";
@@ -20,7 +21,10 @@ const ticket = {
   firstResponseAt: null, updatedAt: new Date("2026-01-01"), title: "Help"
 };
 const tx = {
-  ticket: { updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
+  $queryRaw: jest.fn(),
+  organizationMember: { findUnique: jest.fn() },
+  internalNote: { create: jest.fn() },
+  ticket: { create: jest.fn(), updateMany: jest.fn(), findUniqueOrThrow: jest.fn(), findFirstOrThrow: jest.fn() },
   ticketMessage: { create: jest.fn() },
   activityLog: { create: jest.fn() }
 };
@@ -28,11 +32,13 @@ const tx = {
 beforeEach(() => {
   jest.resetAllMocks();
   (prisma.ticket.findUnique as jest.Mock).mockResolvedValue(ticket);
-  (assertOrgMember as jest.Mock).mockResolvedValue({ role: "AGENT" });
+  (assertOrgMember as jest.Mock).mockResolvedValue({ role: "ADMIN" });
+  tx.organizationMember.findUnique.mockImplementation(async ({ where }) => where.organizationId_userId.userId === "outsider" ? null : { role: "ADMIN" });
   (prisma.organizationMember.findUnique as jest.Mock).mockResolvedValue({ role: "AGENT" });
   (prisma.$transaction as jest.Mock).mockImplementation(async (fn) => fn(tx));
   tx.ticket.updateMany.mockResolvedValue({ count: 1 });
   tx.ticket.findUniqueOrThrow.mockResolvedValue(ticket);
+  tx.ticket.findFirstOrThrow.mockResolvedValue(ticket);
 });
 
 test.each(["agent-a", null])("assignment to %s never changes status", async (assigneeId) => {
@@ -45,9 +51,9 @@ test.each(["agent-a", null])("assignment to %s never changes status", async (ass
 });
 
 test.each([null, { role: "CUSTOMER" }])("rejects ineligible assignee %j", async membership => {
-  (prisma.organizationMember.findUnique as jest.Mock).mockResolvedValue(membership);
+  tx.organizationMember.findUnique.mockResolvedValueOnce({ role: "ADMIN" }).mockResolvedValueOnce(membership);
   await expect(assignTicket("agent-a", ticket.id, { assigneeId: "outsider" })).rejects.toMatchObject({ statusCode: 400 });
-  expect(prisma.$transaction).not.toHaveBeenCalled();
+  expect(tx.ticket.updateMany).not.toHaveBeenCalled();
 });
 
 test("customers cannot change lifecycle or assignment", async () => {
@@ -94,6 +100,7 @@ test("first response uses an atomic null predicate and saved message time", asyn
 
 test("customer replies do not start the staff response clock", async () => {
   (assertOrgMember as jest.Mock).mockResolvedValue({ role: "CUSTOMER" });
+  tx.organizationMember.findUnique.mockResolvedValue({role:"CUSTOMER"});
   tx.ticketMessage.create.mockResolvedValue({ id: "message-a" });
   await createTicketMessage("customer-a", ticket.id, { body: "More details" });
   expect(tx.ticket.updateMany).not.toHaveBeenCalled();
@@ -142,4 +149,30 @@ test("failed persistence does not emit a realtime message", async () => {
   (prisma.$transaction as jest.Mock).mockRejectedValue(new Error("transaction failed"));
   await expect(createTicketMessage("agent-a", ticket.id, { body: "Reply" })).rejects.toThrow();
   expect(emitTicketMessageCreated).not.toHaveBeenCalled();
+});
+
+test('message write rechecks a membership removed after initial authorization',async()=>{
+ tx.organizationMember.findUnique.mockResolvedValue(null);
+ await expect(createTicketMessage('agent-a',ticket.id,{body:'Stale access'})).rejects.toMatchObject({statusCode:403});
+ expect(tx.ticketMessage.create).not.toHaveBeenCalled();
+});
+test('message write applies current customer ownership after demotion',async()=>{
+ tx.organizationMember.findUnique.mockResolvedValue({role:'CUSTOMER'});
+ await expect(createTicketMessage('agent-a',ticket.id,{body:'Demoted'})).rejects.toMatchObject({statusCode:403});
+ expect(tx.ticketMessage.create).not.toHaveBeenCalled();
+});
+
+
+test("removed membership prevents ticket creation after initial authorization", async () => {
+  tx.organizationMember.findUnique.mockResolvedValue(null);
+  await expect(createTicket("agent-a", "org-a", {title:"New ticket",description:"A support question"})).rejects.toMatchObject({statusCode:403});
+  expect(tx.ticket.create).not.toHaveBeenCalled();
+  expect(tx.activityLog.create).not.toHaveBeenCalled();
+});
+
+test.each([null,{role:"CUSTOMER"}])("revoked staff access %j prevents internal note creation", async membership => {
+  tx.organizationMember.findUnique.mockResolvedValue(membership);
+  await expect(createInternalNote("agent-a", ticket.id, {body:"Private note"})).rejects.toMatchObject({statusCode:403});
+  expect(tx.internalNote.create).not.toHaveBeenCalled();
+  expect(tx.activityLog.create).not.toHaveBeenCalled();
 });

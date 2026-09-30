@@ -30,11 +30,11 @@ export type ListActivityResponse = {
 
 export const activityApi = api.injectEndpoints({
   endpoints: (builder) => ({
-    listTicketActivity: builder.query<ListActivityResponse, string>({
-      query: (ticketId) => `/tickets/${ticketId}/activity`,
+    listTicketActivity: builder.query<ListActivityResponse, string | {ticketId:string; page:number}>({
+      query: (arg) => `/tickets/${typeof arg === "string" ? arg : arg.ticketId}/activity?page=${typeof arg === "string" ? 1 : arg.page}`,
       providesTags: (_result, _error, ticketId) => [
         "Activity",
-        { type: "Activity", id: ticketId }
+        { type: "Activity", id: typeof ticketId === "string" ? ticketId : ticketId.ticketId }
       ]
     })
   })
