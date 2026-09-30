@@ -25,7 +25,7 @@ export async function listMessagesHandler(req: AuthenticatedRequest, res: Respon
   const userId = getUserId(req);
   const ticketId = getParam(req, "ticketId");
 
-  const messages = await listTicketMessages(userId, ticketId);
+  const messages = await listTicketMessages(userId, ticketId, req.query.page ?? 1);
 
   return res.status(200).json({
     data: {

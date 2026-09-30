@@ -48,6 +48,7 @@ export type TicketDetails = TicketListItem & {
   organization: OrganizationSummary;
   allowedTransitions: TicketStatus[];
   canAssign: boolean;
+  canUseStaffTools?: boolean;
 };
 
 export type TicketPagination = {

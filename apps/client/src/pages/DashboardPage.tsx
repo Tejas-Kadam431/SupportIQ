@@ -1,5 +1,4 @@
 import {
-  useEffect,
   useMemo,
   useState
 } from "react";
@@ -75,7 +74,7 @@ export function DashboardPage() {
   );
 
   const [
-    selectedOrgId,
+    chosenOrgId,
     setSelectedOrgId
   ] = useState("");
 
@@ -85,8 +84,8 @@ export function DashboardPage() {
     isError: isOrganizationsError
   } = useListOrganizationsQuery();
 
-  const organizations =
-    orgData?.data.organizations ?? [];
+  const organizations = useMemo(() => orgData?.data.organizations ?? [], [orgData]);
+  const selectedOrgId = organizations.some(item => item.organization.id === chosenOrgId) ? chosenOrgId : organizations[0]?.organization.id ?? "";
 
   const selectedOrg =
     organizations.find(
@@ -95,19 +94,6 @@ export function DashboardPage() {
         selectedOrgId
     );
 
-  useEffect(() => {
-    if (
-      !selectedOrgId &&
-      organizations.length > 0
-    ) {
-      setSelectedOrgId(
-        organizations[0].organization.id
-      );
-    }
-  }, [
-    organizations,
-    selectedOrgId
-  ]);
 
   const {
     data: dashboardData,

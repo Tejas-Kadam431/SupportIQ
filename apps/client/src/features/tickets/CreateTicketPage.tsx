@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useListOrganizationsQuery } from "../organizations/orgApi";
 import {
@@ -13,7 +13,7 @@ const priorities: TicketPriority[] = ["LOW", "MEDIUM", "HIGH", "URGENT"];
 export function CreateTicketPage() {
   const navigate = useNavigate();
 
-  const [selectedOrgId, setSelectedOrgId] = useState("");
+  const [chosenOrgId, setSelectedOrgId] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState<TicketPriority>("MEDIUM");
@@ -27,17 +27,13 @@ export function CreateTicketPage() {
 
   const [createTicket, { isLoading: isCreating }] = useCreateTicketMutation();
 
-  const organizations = orgData?.data.organizations ?? [];
+  const organizations = useMemo(() => orgData?.data.organizations ?? [], [orgData]);
+  const selectedOrgId = organizations.some(item => item.organization.id === chosenOrgId) ? chosenOrgId : organizations[0]?.organization.id ?? "";
 
   const selectedOrg = useMemo(() => {
     return organizations.find((item) => item.organization.id === selectedOrgId);
   }, [organizations, selectedOrgId]);
 
-  useEffect(() => {
-    if (!selectedOrgId && organizations.length > 0) {
-      setSelectedOrgId(organizations[0].organization.id);
-    }
-  }, [organizations, selectedOrgId]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -73,7 +69,7 @@ export function CreateTicketPage() {
       navigate(`/tickets/${response.data.ticket.id}`);
     }
     catch (error) {
-      console.error("Failed to create ticket:", error);
+      console.warn("SupportIQ operation failed; see the on-screen recovery message.");
       setFormError(
         getApiErrorMessage(
           error,

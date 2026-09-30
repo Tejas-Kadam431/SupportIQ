@@ -828,3 +828,17 @@ Docker recovered without deleting data/settings. The pinned-source MinIO image b
 Operational procedures and environment descriptions: [ingestion-operations.md](ingestion-operations.md). Decisions: [ADR 005](adr/005-ingestion-reliability.md). Detailed acceptance/report: [stage-i-report.md](stage-i-report.md).
 
 Stage J remains deferred. After Stage I sign-off, freeze features, complete final regression/demo/accessibility and performance QA, consolidate deployment/architecture docs, and prepare the failure-recovery demonstration and engineering ownership notes. Do not add major architecture during Stage J.
+
+## Stage J — final quality and feature-freeze validation (2026-10-01)
+
+Stage I was reviewed and committed as fd0ca833574d7576afda9ec728248fa7d0deb022 before Stage J, from a clean working tree. The C–H checkpoint remains 61bf9fee43542898ff28530cb9bef6dec4085ea3. Existing upstream Copilot, evaluation, analytics, abstention and refresh systems were retained.
+
+Stage J closes bounded defects: guarded local demo reset; current-membership checks inside ticket/message/note writes; customer staff-control/internal-note-count protection; bounded history/document/chunk navigation; SQL first-response aggregation; sanitized client diagnostics; accessible organization selection without effect-driven state initialization; unused legacy upload/App removal. No new product architecture, migration, paid AI feature or distributed service was introduced.
+
+Validation: 228 API units in 17 suites; 146 all-services integration tests in 13 suites with PostgreSQL/pgvector, Redis/BullMQ and private S3 enabled; 27 client tests in six suites; five Playwright workflows, no automatic retries. API/client typechecks/builds pass. Configured client ESLint passes; API lint is still a placeholder. Prisma validates and all thirteen migrations are current. A fresh E2E database and baseline-five-to-current-thirteen upgrade both pass; retained original User/Organization/Ticket/CopilotRun/CopilotEvaluation columns are unchanged and old runs remain LEGACY. Stage I's separate H→I 24-table preservation record remains applicable; Stage J changes no migration.
+
+Both API/worker and nginx client images build from clean locked installs. nginx configuration validates and API image runs as UID 1000 with both entrypoints present. The first client image pull failed due to registry DNS; a subsequent build succeeded. No image was pushed and no environment was deployed. GitHub-hosted CI is not claimed green without a push; the workflow now includes Prisma validation, client lint and browser acceptance in addition to existing service checks.
+
+Local synthetic 20k-run Source Health: 238–263 ms; fifty-case retrieval-only replay: 7.7–12.4 s. See performance.md for all samples and limitations. The public schema is the supported migration target; a custom-schema pgvector lookup probe failed and is documented, not concealed by editing historical migrations.
+
+README, claim map, architecture/ingestion diagrams, ten ADRs, threat model, evaluation methodology, demo/reset, deployment/local setup/testing/performance docs and interview syllabus are complete. Interview material includes three resume bullets, three summary lengths, 66 questions, sixteen subsystem ownership sections and an ordered code-reading map. See stage-j-report.md for the 34-point acceptance record and known-limitations.md for residual constraints. Final local checkpoint is the commit containing this entry; no Stage K is proposed.

@@ -20,3 +20,8 @@ coverage
 DEMO_CREDENTIALS.txt
 
 apps/api/data/
+
+# Browser validation artifacts
+playwright-report/
+test-results/
+e2e/.state.json

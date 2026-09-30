@@ -44,8 +44,8 @@ export function AppLayout() {
   async function handleLogout() {
     try {
       await logout().unwrap();
-    } catch (error) {
-      console.error("Logout request failed:", error);
+    } catch {
+      console.warn("SupportIQ operation failed; see the on-screen recovery message.");
     } finally {
       disconnectSocket();
       dispatch(clearCredentials());

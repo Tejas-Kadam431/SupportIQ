@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { HistoryPages } from "../../components/HistoryPages";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useListOrganizationsQuery } from "../organizations/orgApi";
 import { DocumentList } from "./DocumentList";
@@ -8,7 +9,8 @@ import { useListKnowledgeDocumentsQuery } from "./kbApi";
 import "./kb.css";
 
 export function KnowledgeBasePage() {
-  const [selectedOrgId, setSelectedOrgId] = useState("");
+  const [page, setPage] = useState(1);
+  const [chosenOrgId, setSelectedOrgId] = useState("");
 
   const {
     data: orgData,
@@ -16,25 +18,21 @@ export function KnowledgeBasePage() {
     isError: isOrganizationsError
   } = useListOrganizationsQuery();
 
-  const organizations = orgData?.data.organizations ?? [];
+  const organizations = useMemo(() => orgData?.data.organizations.filter(item => item.role !== "CUSTOMER") ?? [], [orgData]);
+  const selectedOrgId = organizations.some(item => item.organization.id === chosenOrgId) ? chosenOrgId : organizations[0]?.organization.id ?? "";
 
-  useEffect(() => {
-    if (!selectedOrgId && organizations.length > 0) {
-      setSelectedOrgId(organizations[0].organization.id);
-    }
-  }, [organizations, selectedOrgId]);
 
   const {
     data: documentData,
     isLoading: isLoadingDocuments,
     isError: isDocumentsError,
     isFetching
-  } = useListKnowledgeDocumentsQuery(selectedOrgId, {
+  } = useListKnowledgeDocumentsQuery({ orgId: selectedOrgId, page }, {
     skip: !selectedOrgId,
     pollingInterval: selectedOrgId ? 5000 : 0
   });
 
-  const documents = documentData?.data.documents ?? [];
+  const documents = useMemo(() => documentData?.data.documents ?? [], [documentData]);
 
   const stats = useMemo(() => {
     return {
@@ -69,7 +67,7 @@ export function KnowledgeBasePage() {
           <select
             id="kb-org"
             value={selectedOrgId}
-            onChange={(event) => setSelectedOrgId(event.target.value)}
+            onChange={(event) => { setSelectedOrgId(event.target.value); setPage(1); }}
             disabled={isLoadingOrganizations}
           >
             {organizations.map((item) => (
@@ -89,8 +87,8 @@ export function KnowledgeBasePage() {
 
       {!isLoadingOrganizations && organizations.length === 0 && (
         <section className="siq-card siq-card-padding kb-empty-state">
-          <h2>No organization found</h2>
-          <p>Create an organization before uploading knowledge documents.</p>
+          <h2>Staff access required</h2>
+          <p>Knowledge administration is available only to staff in their organization.</p>
           <Link to="/organizations" className="siq-button siq-button-primary">
             Go to organizations
           </Link>
@@ -99,6 +97,7 @@ export function KnowledgeBasePage() {
 
       {selectedOrgId && (
         <>
+          <p>Counts below describe this page of documents.</p>
           <section className="kb-stats-grid">
             <KbMetric title="Documents" value={stats.total} hint="Uploaded files" />
             <KbMetric title="Published" value={stats.ready} hint="Searchable documents" />
@@ -125,6 +124,7 @@ export function KnowledgeBasePage() {
             isError={isDocumentsError}
             isFetching={isFetching}
           />
+          <HistoryPages page={page} count={documents.length} onChange={setPage} />
         </>
       )}
     </main>

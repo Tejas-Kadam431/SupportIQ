@@ -25,10 +25,7 @@ export function useTicketRealtime({
     function joinTicketRoom() {
       socket.emit("ticket:join", { ticketId: activeTicketId }, (response) => {
         if (!response?.ok) {
-          console.error(
-            "Failed to join ticket room:",
-            response?.error ?? "Unknown error"
-          );
+          console.warn("SupportIQ operation failed; see the on-screen recovery message.");
         }
       });
     }
@@ -37,8 +34,8 @@ export function useTicketRealtime({
       joinTicketRoom();
     }
 
-    function handleConnectError(error: Error) {
-      console.error("Socket connection error:", error.message);
+    function handleConnectError() {
+      console.warn("SupportIQ operation failed; see the on-screen recovery message.");
     }
 
     function handleMessageCreated(payload: TicketMessageCreatedPayload) {

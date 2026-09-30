@@ -1,3 +1,4 @@
+import { HistoryPages } from "../../components/HistoryPages";
 import { useState } from "react";
 import { type KnowledgeDocument, useDeleteKnowledgeDocumentMutation, useReprocessKnowledgeDocumentMutation, useKnowledgeVersionsQuery, useUploadKnowledgeVersionMutation, usePublishKnowledgeVersionMutation } from "./kbApi";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
@@ -50,7 +51,8 @@ export function VersionHistory({ orgId, documentId, canManage }: {
     documentId: string;
     canManage: boolean;
 }) {
-    const { data, isLoading, isError } = useKnowledgeVersionsQuery({ orgId, documentId }, { pollingInterval: 5000 });
+    const [page, setPage] = useState(1);
+    const { data, isLoading, isError } = useKnowledgeVersionsQuery({ orgId, documentId, page }, { pollingInterval: 5000 });
     const [upload, { isLoading: uploading }] = useUploadKnowledgeVersionMutation();
     const [publish, { isLoading: publishing }] = usePublishKnowledgeVersionMutation();
     const [file, setFile] = useState<File | null>(null), [error, setError] = useState("");
@@ -92,5 +94,5 @@ export function VersionHistory({ orgId, documentId, canManage }: {
  {v.status === "FAILED" && v.ingestion?.retryable === false && <p>Upload corrected content as a new version.</p>}
  {canManage && v.status === "READY" && <button className="siq-button" disabled={publishing} onClick={() => publishVersion(v.id)}>Publish v{v.versionNumber}</button>}</li>)}</ul>
  {canManage && <div><label>Replacement document <input aria-label="Replacement document" type="file" accept=".pdf,.txt,.md,.markdown" onChange={e => setFile(e.target.files?.[0] ?? null)}/></label><button className="siq-button" disabled={!file || uploading} onClick={uploadFile}>Upload new version</button></div>}
- {error && <p role="alert">{error}</p>}</section>;
+ {error && <p role="alert">{error}</p>}<HistoryPages page={page} count={doc?.versions.length ?? 0} onChange={setPage}/></section>;
 }

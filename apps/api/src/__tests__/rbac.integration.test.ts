@@ -216,6 +216,27 @@ describe("SupportIQ RBAC integration", () => {
       .expect(403);
   });
 
+  it("never exposes internal-note counts in customer ticket projections", async () => {
+    const detail = await request(app).get(`/api/v1/tickets/${ticketId}`).set(authHeader(customer)).expect(200);
+    expect(detail.body.data.ticket._count).not.toHaveProperty('internalNotes');
+    const list = await request(app).get(`/api/v1/organizations/${orgId}/tickets`).set(authHeader(customer)).expect(200);
+    expect(list.body.data.tickets.length).toBeGreaterThan(0);
+    for (const ticket of list.body.data.tickets) expect(ticket._count).not.toHaveProperty('internalNotes');
+    const staff = await request(app).get(`/api/v1/tickets/${ticketId}`).set(authHeader(agent)).expect(200);
+    expect(staff.body.data.ticket._count).toHaveProperty('internalNotes');
+  });
+
+  it("bounds message history with deterministic pages and rejects invalid pages", async () => {
+    const fresh = await createTicket(customer, orgId);
+    const timestamp = new Date();
+    await prisma.ticketMessage.createMany({data:Array.from({length:51},(_,i)=>({ticketId:fresh.id,senderId:customer.id,body:'Page fixture '+i,createdAt:timestamp}))});
+    const first = await request(app).get(`/api/v1/tickets/${fresh.id}/messages?page=1`).set(authHeader(customer)).expect(200);
+    const second = await request(app).get(`/api/v1/tickets/${fresh.id}/messages?page=2`).set(authHeader(customer)).expect(200);
+    expect(first.body.data.messages).toHaveLength(50);expect(second.body.data.messages).toHaveLength(1);
+    expect(new Set([...first.body.data.messages,...second.body.data.messages].map(row=>row.id)).size).toBe(51);
+    await request(app).get(`/api/v1/tickets/${fresh.id}/messages?page=-1`).set(authHeader(customer)).expect(400);
+  });
+
   it("allows agent to update ticket status but blocks customer", async () => {
     await request(app)
       .patch(`/api/v1/tickets/${ticketId}/status`)

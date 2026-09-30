@@ -21,31 +21,6 @@ function assertStaffRole(role: Role) {
   }
 }
 
-function calculateAverageFirstResponseMinutes(
-  tickets: {
-    createdAt: Date;
-    firstResponseAt: Date | null;
-  }[]
-) {
-  const respondedTickets = tickets.filter((ticket) => ticket.firstResponseAt);
-
-  if (respondedTickets.length === 0) {
-    return null;
-  }
-
-  const totalMinutes = respondedTickets.reduce((sum, ticket) => {
-    const firstResponseAt = ticket.firstResponseAt;
-
-    if (!firstResponseAt) {
-      return sum;
-    }
-
-    const diffMs = firstResponseAt.getTime() - ticket.createdAt.getTime();
-    return sum + diffMs / 1000 / 60;
-  }, 0);
-
-  return Math.round(totalMinutes / respondedTickets.length);
-}
 export async function getOrganizationDashboard(userId: string, orgId: string, range:unknown={}) {
   const membership = await assertOrgMember(userId, orgId);
   const role = membership.role as Role;
@@ -57,7 +32,7 @@ export async function getOrganizationDashboard(userId: string, orgId: string, ra
     unassignedTickets,
     statusCounts,
     priorityCounts,
-    firstResponseTickets,
+    firstResponseAverage,
     recentTickets,
     recentActivity
   ] = await Promise.all([
@@ -98,18 +73,7 @@ export async function getOrganizationDashboard(userId: string, orgId: string, ra
       }))
     ),
 
-    prisma.ticket.findMany({
-      where: {
-        organizationId: orgId,
-        firstResponseAt: {
-          not: null
-        }
-      },
-      select: {
-        createdAt: true,
-        firstResponseAt: true
-      }
-    }),
+    prisma.$queryRaw<Array<{ minutes: number | null }>>`SELECT round(avg(EXTRACT(EPOCH FROM ("firstResponseAt" - "createdAt")) / 60))::float8 AS minutes FROM "Ticket" WHERE "organizationId"=${orgId} AND "firstResponseAt" IS NOT NULL`,
 
     prisma.ticket.findMany({
       where: {
@@ -182,7 +146,7 @@ export async function getOrganizationDashboard(userId: string, orgId: string, ra
       totalTickets,
       unassignedTickets,
       averageFirstResponseMinutes:
-        calculateAverageFirstResponseMinutes(firstResponseTickets)
+        firstResponseAverage[0]?.minutes ?? null
     },
     statusCounts: statusSummary,
     priorityCounts: prioritySummary,

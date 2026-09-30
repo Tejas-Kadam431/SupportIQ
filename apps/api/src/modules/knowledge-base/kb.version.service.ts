@@ -1,3 +1,4 @@
+import { historyPage } from "../../common/pagination.js";
 import { prisma } from "../../config/prisma.js";
 import type { Prisma } from "@prisma/client";
 import { AppError } from "../../common/errors/AppError.js";
@@ -126,9 +127,9 @@ export async function archiveKnowledgeDocument(userId: string, orgId: string, do
         return archived;
     }, { isolationLevel: "ReadCommitted" });
 }
-export async function getVersionHistory(userId: string, orgId: string, documentId: string) {
+export async function getVersionHistory(userId: string, orgId: string, documentId: string, page: unknown = 1) {
     await authorizeKnowledge(prisma, userId, orgId);
-    const doc = await prisma.knowledgeDocument.findFirst({ where: { id: documentId, organizationId: orgId }, include: { versions: { orderBy: { versionNumber: "desc" }, select: { id: true, versionNumber: true, status: true, originalName: true, createdAt: true, publishedAt: true, sourceHash: true, contentHash: true, semanticIndexedChunks: true, errorMessage: true, createdByIdentity: true, ingestion: { select: { stage: true, attempts: true, retryable: true, errorCategory: true, startedAt: true, completedAt: true, chunksTotal: true, chunksEmbedded: true, lexicalReady: true, semanticReady: true, embeddingModel: true, requestId: true } } } } } });
+    const doc = await prisma.knowledgeDocument.findFirst({ where: { id: documentId, organizationId: orgId }, include: { versions: { ...historyPage(page), orderBy: { versionNumber: "desc" }, select: { id: true, versionNumber: true, status: true, originalName: true, createdAt: true, publishedAt: true, sourceHash: true, contentHash: true, semanticIndexedChunks: true, errorMessage: true, createdByIdentity: true, ingestion: { select: { stage: true, attempts: true, retryable: true, errorCategory: true, startedAt: true, completedAt: true, chunksTotal: true, chunksEmbedded: true, lexicalReady: true, semanticReady: true, embeddingModel: true, requestId: true } } } } } });
     if (!doc)
         throw new AppError("Document not found", 404);
     return doc;

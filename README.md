@@ -1,535 +1,71 @@
 # SupportIQ
 
-**SupportIQ** is an AI-powered customer support SaaS platform for managing support tickets, organization workspaces, customer conversations, internal notes, knowledge-base documents, and source-grounded AI reply drafts.
+An evidence-first multi-tenant customer-support intelligence platform that connects human-reviewed AI replies to versioned knowledge fixes and historical verification.
 
-It is built as a full-stack, production-style SaaS project with authentication, multi-tenant organizations, RBAC, tickets, real-time messaging, background jobs, knowledge-base search, AI draft generation, read-only recruiter demo protection, CI, and deployment.
+## Why I built it
 
-## Live Demo
+Support AI can produce plausible answers from weak or outdated knowledge. A useful system must explain its evidence, retain human decisions, and let a team check whether a knowledge change addressed earlier failures.
 
-- **Live App:** https://supportiq-client.onrender.com
-- **API Health:** https://supportiq-ns1i.onrender.com/health
-- **GitHub Repository:** https://github.com/Tejas-Kadam431/SupportIQ
+## The reliability loop
 
-### Demo Account
-
-Use the recruiter demo account for a clean read-only walkthrough:
-
-```txt
-Email: demo.owner@supportiq.app
-Password: password123
+```mermaid
+flowchart LR
+  Ticket --> Evidence --> Copilot --> Human[Human decision]
+  Human --> Signal[Failure signal] --> Issue[Knowledge Issue]
+  Issue --> Version[Versioned fix] --> Replay[Historical replay] --> Verification
 ```
 
-The demo workspace is intentionally read-only. You can view tickets, search the knowledge base, and generate AI drafts, but create/update/delete actions are blocked to keep the public demo clean.
+- Organization-scoped PostgreSQL FTS and pgvector retrieval merge rankings with Reciprocal Rank Fusion. Deterministic evidence policy can abstain before generation.
+- Humans explicitly accept, edit or reject a Copilot Run. AI and replay never automatically send customer messages.
+- Immutable knowledge versions preserve evidence behind historical runs while replacements prepare separately from the publication.
+- Qualifying failures become Knowledge Issues. Source Health distinguishes exposure from attributed failure; rejection alone does not prove a document is wrong.
+- Reliability Lab compares historical cases with candidate knowledge and successful guardrails before an issue becomes VERIFIED.
+- Object storage, a transactional outbox, BullMQ, processing leases and recovery scans support ingestion through interruptions and duplicate delivery.
 
-To test full editing workflows, create your own account from the app.
+## Architecture
 
----
-
-## Screenshots
-
-### Login
-
-![SupportIQ Login](docs/screenshots/login.png)
-
-### Dashboard
-
-![SupportIQ Dashboard](docs/screenshots/dashboard.png)
-
-### Tickets
-
-![SupportIQ Tickets](docs/screenshots/tickets.png)
-
-### AI Draft with Knowledge Grounding
-
-![SupportIQ AI Draft](docs/screenshots/ticket-details-ai.png)
-
-### Knowledge Base Search
-
-![SupportIQ Knowledge Base](docs/screenshots/knowledge-base.png)
-
-### Read-only Demo Protection
-
-![SupportIQ Read-only Demo](docs/screenshots/demo-readonly.png)
-
----
-
-## Key Features
-
-### Authentication and Organizations
-
-- JWT-based authentication with access and refresh tokens
-- Secure cookie-based refresh flow
-- Multi-tenant organization workspaces
-- Role-based access control for owners, admins, agents, and customers
-- Protected organization member management
-
-### Ticket Management
-
-- Create, view, filter, and manage support tickets
-- Ticket status and priority tracking
-- Ticket assignment and unassignment
-- Customer and assignee metadata
-- Public ticket messages
-- Private internal notes for support staff
-- Ticket activity timeline and audit trail
-
-### AI Reply Drafts
-
-- AI-powered support reply generation
-- Gemini-powered draft generation in the deployed demo
-- Safe fallback draft generator when external AI is unavailable
-- Tone selection: professional, friendly, and concise
-- Confidence indicators and review warnings
-- Knowledge-base grounded sources shown to support agents
-- Source cards with excerpts and full chunk visibility
-
-### Knowledge Base
-
-- Upload support documents such as TXT, Markdown, and PDF
-- Background document processing with Redis and BullMQ
-- Text extraction and chunking
-- Knowledge-base search for support policies and product information
-- pgvector-ready semantic search architecture
-- Keyword fallback search when embeddings are unavailable
-
-### Real-time Support Experience
-
-- Socket.IO powered real-time ticket message updates
-- Multi-tab message synchronization
-- Live ticket conversation refresh
-
-### Dashboard and Analytics
-
-- Support workspace overview
-- Ticket counts and status distribution
-- Priority distribution
-- Recent ticket activity
-- Knowledge-base and AI assistant summary cards
-
-### Demo Safety
-
-- Public recruiter demo account is protected as read-only
-- Backend-level write protection prevents demo data pollution
-- Create/update/delete/send/upload actions are blocked for demo users
-- Read-only mode still allows browsing, searching, and AI draft generation
-
----
-
-## Tech Stack
-
-### Frontend
-
-- React
-- TypeScript
-- Vite
-- React Router
-- Redux Toolkit
-- RTK Query
-- React Hook Form
-- Zod
-- CSS modules/global feature styles
-
-### Backend
-
-- Node.js
-- Express
-- TypeScript
-- Prisma ORM
-- PostgreSQL
-- JWT authentication
-- Zod validation
-- Socket.IO
-- Redis
-- BullMQ
-- Multer uploads
-- Helmet and rate limiting
-
-### AI and Search
-
-- Gemini API for AI draft generation
-- OpenAI-compatible architecture support
-- Knowledge-base chunk retrieval
-- pgvector-ready semantic search design
-- Keyword fallback search
-
-### Testing, CI, and Deployment
-
-- Jest
-- Supertest
-- GitHub Actions CI
-- Render backend deployment
-- Render static frontend deployment
-- Render PostgreSQL
-- Render Redis / Key Value
-
----
-
-## Architecture Overview
-
-```txt
-supportiq/
-  apps/
-    api/
-      src/
-        common/
-          middleware/
-          errors/
-        config/
-        modules/
-          ai/
-          auth/
-          dashboard/
-          knowledge-base/
-          organizations/
-          tickets/
-        realtime/
-        server.ts
-        app.ts
-      prisma/
-        schema.prisma
-        seed.ts
-
-    client/
-      src/
-        app/
-        features/
-          auth/
-          dashboard/
-          knowledge-base/
-          organizations/
-          tickets/
-        layouts/
-        routes/
-        utils/
-
-  packages/
-    shared/
-
-  docs/
-    screenshots/
-
-  docker-compose.yml
-  pnpm-workspace.yaml
+```mermaid
+flowchart LR
+  Client[React client] --> API[Express / Socket.IO]
+  API --> PG[(PostgreSQL / pgvector)]
+  API --> Storage[(Private object storage)]
+  Worker[Ingestion worker] --> PG
+  Worker --> Redis[(Redis / BullMQ)]
+  Worker --> Storage
+  API --> AI[Optional AI providers]
+  Worker --> AI
 ```
 
----
+API and worker share a modular codebase but run separately. Queue delivery is at least once; database checks fence duplicate and stale work. Read the [architecture](docs/architecture.md), [concurrency boundaries](docs/concurrency.md) and [ten ADRs](docs/adr/README.md).
 
-## AI Grounding Flow
+## Reliability Lab example
 
-SupportIQ generates agent-facing AI reply drafts using ticket context and knowledge-base retrieval.
+The synthetic annual-refund scenario shows six historical failures, a candidate comparison, a published correction, and ten guardrails. Its completed verification reports 6/6 historical failures improved and 10/10 guardrails preserved. These are seeded outcomes, not production accuracy. VERIFIED applies to captured cases and configuration, not all future behavior. See [evaluation methodology](docs/ai-evaluation.md).
 
-```txt
-Ticket title + description
-        ↓
-Knowledge-base search
-        ↓
-Relevant chunks selected
-        ↓
-AI prompt built with ticket + sources
-        ↓
-Gemini generates customer-facing draft
-        ↓
-Support agent reviews draft, confidence, warnings, and sources
-        ↓
-Agent can copy or send the draft
-```
+## Security and tenancy
 
-The AI draft panel shows:
+Current organization membership and customer ownership control ticket access. Customers cannot access internal notes, staff analytics or private KB administration. Socket delivery rechecks authorization and token expiry. Refresh tokens travel only in cookies; single-use rotation and reuse detection revoke the affected session family. Critical writes use locks and current membership checks. See [claim evidence](docs/readme-claims.md) and the [threat model](docs/threat-model.md) for residual risks.
 
-- AI provider
-- Selected tone
-- Confidence level
-- Search query used for grounding
-- Source count
-- Source cards with document name, chunk number, score, excerpt, and full chunk
+## Stack and local setup
 
-This makes the AI behavior reviewable instead of being a black box.
+React, TypeScript, Redux Toolkit Query, Express, Prisma, PostgreSQL/pgvector, Redis/BullMQ, Socket.IO, S3-compatible storage, Jest, Vitest and Playwright. Optional model providers support generation and embeddings; provider-free operation supports lexical retrieval, deterministic gating and a template fallback.
 
----
+Use Node 22 and pnpm 10. Install with `pnpm install --frozen-lockfile`, configure the per-application environment templates, start isolated Compose services, run `prisma migrate deploy`, and explicitly opt into a disposable demo seed. Start API, worker and client separately. Follow [local development](docs/local-development.md); the seed guard rejects production and remote resets.
 
-## Read-only Demo Protection
+## Tests, deployment and demo
 
-The deployed demo account is protected at the backend level.
+[Testing](docs/testing.md) covers policy units, real PostgreSQL/pgvector, Redis/BullMQ, private S3-compatible storage, client interactions and five browser workflows. Live paid providers are excluded from deterministic CI. Client ESLint is configured and checked; API lint remains an explicit placeholder. Typecheck/build success is not an API lint pass.
 
-Read-only demo users can:
+[Deployment readiness](docs/deployment.md) covers runtime separation, migrations, HTTPS, cookies, origins, storage and release checks. [Ingestion operations](docs/ingestion-operations.md) covers recovery. No deployment is performed automatically.
 
-```txt
-View dashboard
-View tickets
-Open ticket details
-View messages and internal notes
-Search the knowledge base
-Generate AI drafts
-Copy AI drafts
-```
+Follow the [five-minute demo](docs/demo.md). The intentionally public read-only identity is demo.owner@supportiq.app / password123 in seeded environments. Mutable staff fixtures belong only in disposable demonstrations. No public deployment URL is claimed.
 
-Read-only demo users cannot:
+## Engineering and learning
 
-```txt
-Create organizations
-Create tickets
-Change ticket status
-Assign tickets
-Send messages
-Add internal notes
-Upload knowledge-base documents
-Delete knowledge-base documents
-Reprocess documents
-Add, remove, or update members
-```
+- [Authoritative engineering record](docs/repository-reconciliation.md)
+- [Final audit](docs/stage-j-audit.md)
+- [AI evaluation](docs/ai-evaluation.md), [threat model](docs/threat-model.md) and [ADRs](docs/adr/README.md)
+- [Known limitations](docs/known-limitations.md)
+- [Interview preparation](docs/interview/README.md)
 
-Blocked actions return a clear error message:
-
-```txt
-Demo account is read-only. Please create your own account to modify data.
-```
-
----
-
-## Local Development
-
-### Prerequisites
-
-- Node.js 22+
-- pnpm
-- Docker Desktop
-- PostgreSQL and Redis through Docker Compose
-
-### Clone the Repository
-
-```bash
-git clone https://github.com/Tejas-Kadam431/SupportIQ.git
-cd SupportIQ
-```
-
-### Install Dependencies
-
-```bash
-pnpm install
-```
-
-### Start PostgreSQL and Redis
-
-```bash
-docker compose up -d
-```
-
-### Backend Environment Variables
-
-Create:
-
-```txt
-apps/api/.env
-```
-
-Example:
-
-```env
-NODE_ENV=development
-PORT=4000
-
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/supportiq
-REDIS_URL=redis://localhost:6379
-
-JWT_ACCESS_SECRET=your_access_secret
-JWT_ACCESS_EXPIRES_IN=15m
-
-CLIENT_URL=http://localhost:5173
-
-GEMINI_API_KEY=your_gemini_api_key
-GEMINI_MODEL=gemini-2.5-flash
-
-OPENAI_API_KEY=
-OPENAI_MODEL=gpt-4o-mini
-OPENAI_EMBEDDING_MODEL=text-embedding-3-small
-
-DEMO_READONLY_EMAILS=demo.owner@supportiq.app
-UPLOAD_ROOT_DIR=uploads
-```
-
-### Frontend Environment Variables
-
-Create:
-
-```txt
-apps/client/.env
-```
-
-Example:
-
-```env
-VITE_API_BASE_URL=http://localhost:4000/api/v1
-VITE_SOCKET_URL=http://localhost:4000
-```
-
-### Prisma Setup
-
-```bash
-cd apps/api
-pnpm db:generate
-pnpm exec prisma db push
-```
-
-### Start Backend
-
-```bash
-cd apps/api
-pnpm dev
-```
-
-### Start Frontend
-
-```bash
-cd apps/client
-pnpm dev
-```
-
-Frontend runs on:
-
-```txt
-http://localhost:5173
-```
-
-Backend health check:
-
-```txt
-http://localhost:4000/health
-```
-
----
-
-## Build Commands
-
-### Backend
-
-```bash
-cd apps/api
-pnpm build
-```
-
-### Frontend
-
-```bash
-cd apps/client
-pnpm build
-```
-
-### Tests
-
-```bash
-cd apps/api
-pnpm test
-```
-
----
-
-## Deployment
-
-SupportIQ is deployed on Render.
-
-### Backend
-
-The backend Render service uses:
-
-```txt
-apps/api
-```
-
-Build command:
-
-```bash
-corepack enable && pnpm install --frozen-lockfile && pnpm --dir apps/api db:generate && pnpm --dir apps/api exec prisma db push && pnpm --dir apps/api build
-```
-
-Start command:
-
-```bash
-pnpm --dir apps/api start
-```
-
-### Frontend
-
-The frontend Render static site uses:
-
-```txt
-apps/client/dist
-```
-
-Build command:
-
-```bash
-corepack enable && pnpm install --frozen-lockfile && pnpm --dir apps/client build
-```
-
-SPA rewrite:
-
-```txt
-Source: /*
-Destination: /index.html
-Action: Rewrite
-```
-
----
-
-## Demo Walkthrough
-
-A recommended recruiter demo flow:
-
-```txt
-1. Open the live app
-2. Click Try Demo Account
-3. Show dashboard metrics and support activity
-4. Open the tickets page
-5. Open a billing or password reset ticket
-6. Generate an AI draft
-7. Show provider, confidence, grounding query, and source cards
-8. Open the Knowledge Base page
-9. Search for a support policy
-10. Try creating a ticket to show read-only demo protection
-```
-
-This flow demonstrates the main product capabilities without modifying demo data.
-
----
-
-## Project Highlights
-
-SupportIQ demonstrates practical full-stack engineering skills:
-
-- Production-style monorepo structure
-- Multi-tenant SaaS architecture
-- Secure authentication and refresh token flow
-- Role-based access control
-- Backend integration tests for access control
-- Real-time updates with Socket.IO
-- Background job processing with Redis and BullMQ
-- AI integration with reviewable source grounding
-- Knowledge-base document processing
-- Public read-only demo protection
-- CI pipeline with GitHub Actions
-- Full deployment on Render
-
----
-
-## Future Improvements
-
-Potential improvements:
-
-- Add customer portal view
-- Add email notification integration
-- Add ticket SLA tracking
-- Add advanced dashboard analytics
-- Add full semantic search with Gemini/OpenAI embeddings
-- Add attachment support for ticket messages
-- Add organization-level billing/subscription plans
-- Add admin-configurable AI prompt settings
-- Add audit log export
-
----
-
-## Author
-
-**Tejas Kadam**
-
-- GitHub: https://github.com/Tejas-Kadam431
-- Project: https://github.com/Tejas-Kadam431/SupportIQ
+Multiple API instances require a shared Socket.IO adapter. Uploads have validation and resource bounds but no malware scanner. Synthetic fixtures and human feedback cannot establish universal AI accuracy.

@@ -41,7 +41,7 @@ export async function uploadDocumentHandler(req: AuthenticatedRequest, res: Resp
 }
 export async function listDocumentsHandler(req: AuthenticatedRequest, res: Response) {
     const orgId = getParam(req, "orgId");
-    const documents = await listKnowledgeDocuments(orgId);
+    const documents = await listKnowledgeDocuments(orgId, req.query.page ?? 1);
     return res.status(200).json({
         data: {
             documents
@@ -68,7 +68,7 @@ export async function getDocumentHandler(req: AuthenticatedRequest, res: Respons
 export async function listChunksHandler(req: AuthenticatedRequest, res: Response) {
     const orgId = getParam(req, "orgId");
     const documentId = getParam(req, "documentId");
-    const chunks = await listKnowledgeChunks(orgId, documentId);
+    const chunks = await listKnowledgeChunks(orgId, documentId, req.query.page ?? 1);
     return res.status(200).json({
         data: {
             chunks
@@ -94,6 +94,6 @@ export async function deleteDocumentHandler(req: AuthenticatedRequest, res: Resp
         message: "Document archived. Historical versions retained."
     });
 }
-export async function versionHistoryHandler(req: AuthenticatedRequest, res: Response) { return res.json({ data: { document: await getVersionHistory(getUserId(req), getParam(req, "orgId"), getParam(req, "documentId")) } }); }
+export async function versionHistoryHandler(req: AuthenticatedRequest, res: Response) { return res.json({ data: { document: await getVersionHistory(getUserId(req), getParam(req, "orgId"), getParam(req, "documentId"), req.query.page ?? 1) } }); }
 export async function publishVersionHandler(req: AuthenticatedRequest, res: Response) { return res.json({ data: { version: await publishKnowledgeVersion(getUserId(req), getParam(req, "orgId"), getParam(req, "documentId"), getParam(req, "versionId"), req.body.expectedCurrentVersionId) } }); }
 export async function copilotKnowledgeHandler(req: AuthenticatedRequest, res: Response) { return res.json({ data: await resolveCopilotKnowledge(getUserId(req), getParam(req, "orgId"), getParam(req, "runId")) }); }

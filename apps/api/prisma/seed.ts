@@ -1,3 +1,4 @@
+import { assertDemoResetAllowed } from "./seedGuard.js";
 import { seedReliabilityLab } from "./seedReliability.js";
 import { createSeedKnowledge } from "./seedKnowledge.js";
 import {
@@ -25,6 +26,7 @@ async function resetDatabase() {
 }
 
 async function main() {
+  assertDemoResetAllowed(process.env);
   await resetDatabase();
 
   const passwordHash = await hashPassword("password123");
@@ -505,7 +507,7 @@ async function main() {
 
 main()
   .catch((error) => {
-    console.error(error);
+    console.error("Demo seed failed; check guarded configuration and database availability.");
     process.exit(1);
   })
   .finally(async () => {

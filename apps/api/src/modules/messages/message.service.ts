@@ -1,3 +1,6 @@
+import { lockOrganization, currentMembership } from "../organizations/org.transaction.js";
+import { AppError } from "../../common/errors/AppError.js";
+import { historyPage } from "../../common/pagination.js";
 import type { Prisma, Ticket } from "@prisma/client";
 import { prisma } from "../../config/prisma.js";
 import { getTicketOrThrow } from "../tickets/ticket.service.js";
@@ -11,7 +14,7 @@ function isStaffRole(role: Role) {
   return role !== "CUSTOMER";
 }
 
-export async function listTicketMessages(userId: string, ticketId: string) {
+export async function listTicketMessages(userId: string, ticketId: string, page: unknown = 1) {
   await getTicketOrThrow(userId, ticketId);
 
   return prisma.ticketMessage.findMany({
@@ -28,10 +31,9 @@ export async function listTicketMessages(userId: string, ticketId: string) {
         }
       }
     },
-    orderBy: {
-      createdAt: "asc"
-    }
-  });
+    ...historyPage(page),
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }]
+  }).then(rows => rows.reverse());
 }
 
 export async function createTicketMessage(
@@ -52,6 +54,11 @@ export async function persistTicketMessage(
   ticket: Pick<Ticket, "id" | "organizationId" | "title" | "firstResponseAt">,
   userId: string, role: Role, input: CreateMessageInput
 ) {
+  await lockOrganization(tx, ticket.organizationId);
+  const actor = await currentMembership(tx, userId, ticket.organizationId);
+  const current = await tx.ticket.findFirstOrThrow({where:{id:ticket.id,organizationId:ticket.organizationId}});
+  if (actor.role === "CUSTOMER" && current.customerId !== userId) throw new AppError("Ticket access denied",403);
+  role = actor.role;
   const ticketId = ticket.id;
   const createdMessage = await tx.ticketMessage.create({
     data: {

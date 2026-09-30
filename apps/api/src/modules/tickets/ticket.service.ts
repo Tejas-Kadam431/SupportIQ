@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { lockOrganization, currentMembership } from "../organizations/org.transaction.js";
 import { isAssignableRole, canAssignTicket, activeTicketStatuses } from "./assignment.policy.js";
 import { unassignActiveTickets } from "./assignment.service.js";
@@ -55,6 +56,8 @@ export async function createTicket(userId: string, orgId: string, input: CreateT
   await assertOrgMember(userId, orgId);
 
   const ticket = await prisma.$transaction(async (tx) => {
+    await lockOrganization(tx, orgId);
+    await currentMembership(tx,userId,orgId);
     const createdTicket = await tx.ticket.create({
       data: {
         organizationId: orgId,
@@ -111,7 +114,7 @@ export async function listTickets(userId: string, orgId: string, query: ListTick
   const limit = Math.min(parsePositiveInt(query.limit, 10), 50);
   const skip = (page - 1) * limit;
 
-  const where: any = {
+  const where: Prisma.TicketWhereInput = {
     organizationId: orgId
   };
 
@@ -179,7 +182,7 @@ export async function listTickets(userId: string, orgId: string, query: ListTick
           }
         }
       },
-      orderBy: parseSort(query.sort),
+      orderBy: [parseSort(query.sort), { id: "desc" }],
       skip,
       take: limit
     }),
@@ -190,7 +193,7 @@ export async function listTickets(userId: string, orgId: string, query: ListTick
   ]);
 
   return {
-    tickets,
+    tickets: role === "CUSTOMER" ? tickets.map(ticket => ({ ...ticket, _count: { messages: ticket._count.messages } })) : tickets,
     pagination: {
       page,
       limit,
@@ -263,7 +266,7 @@ export async function getTicketDetails(userId: string, ticketId: string) {
     }
   });
   if (!details) throw new AppError("Ticket not found", 404);
-  return { ...details, canAssign: canAssignTicket(membership.role), allowedTransitions: allowedTicketTransitions(details.status) };
+  return { ...details, ...(membership.role === "CUSTOMER" ? { _count: { messages: details._count.messages } } : {}), canUseStaffTools: membership.role !== "CUSTOMER", canAssign: canAssignTicket(membership.role), allowedTransitions: membership.role === "CUSTOMER" ? [] : allowedTicketTransitions(details.status) };
 }
 
 export async function updateTicketStatus(

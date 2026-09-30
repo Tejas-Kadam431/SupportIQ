@@ -26,11 +26,11 @@ export type CreateNoteResponse = {
 
 export const notesApi = api.injectEndpoints({
   endpoints: (builder) => ({
-    listNotes: builder.query<ListNotesResponse, string>({
-      query: (ticketId) => `/tickets/${ticketId}/notes`,
+    listNotes: builder.query<ListNotesResponse, string | {ticketId:string; page:number}>({
+      query: (arg) => `/tickets/${typeof arg === "string" ? arg : arg.ticketId}/notes?page=${typeof arg === "string" ? 1 : arg.page}`,
       providesTags: (_result, _error, ticketId) => [
         "Notes",
-        { type: "Notes", id: ticketId }
+        { type: "Notes", id: typeof ticketId === "string" ? ticketId : ticketId.ticketId }
       ]
     }),
 

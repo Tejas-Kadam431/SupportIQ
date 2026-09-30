@@ -87,8 +87,8 @@ export const kbApi = api.injectEndpoints({
             };
         }, {
             orgId: string;
-            documentId: string;
-        }>({ query: ({ orgId, documentId }) => `/organizations/${orgId}/kb/documents/${documentId}/versions`, providesTags: ["KnowledgeBase"] }),
+            documentId: string; page?: number;
+        }>({ query: ({ orgId, documentId, page = 1 }) => `/organizations/${orgId}/kb/documents/${documentId}/versions?page=${page}`, providesTags: ["KnowledgeBase"] }),
         uploadKnowledgeVersion: builder.mutation<UploadDocumentResponse, {
             orgId: string;
             documentId: string;
@@ -100,8 +100,8 @@ export const kbApi = api.injectEndpoints({
             versionId: string;
             expectedCurrentVersionId: string | null;
         }>({ query: ({ orgId, documentId, versionId, expectedCurrentVersionId }) => ({ url: `/organizations/${orgId}/kb/documents/${documentId}/versions/${versionId}/publish`, method: "POST", body: { expectedCurrentVersionId } }), invalidatesTags: ["KnowledgeBase"] }),
-        listKnowledgeDocuments: builder.query<ListDocumentsResponse, string>({
-            query: (orgId) => `/organizations/${orgId}/kb/documents`,
+        listKnowledgeDocuments: builder.query<ListDocumentsResponse, string | { orgId: string; page: number }>({
+            query: (arg) => typeof arg === "string" ? `/organizations/${arg}/kb/documents` : `/organizations/${arg.orgId}/kb/documents?page=${arg.page}`,
             providesTags: ["KnowledgeBase"]
         }),
         uploadKnowledgeDocument: builder.mutation<UploadDocumentResponse, {

@@ -36,8 +36,8 @@ async function onSubmit(values: RegisterFormInput) {
     );
 
     navigate("/dashboard");
-  } catch (error) {
-    console.error("Registration failed:", error);
+  } catch {
+    console.warn("SupportIQ operation failed; see the on-screen recovery message.");
   }
 }
 

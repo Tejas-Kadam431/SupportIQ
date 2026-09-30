@@ -1,3 +1,4 @@
+import { historyPage } from "../../common/pagination.js";
 import { prisma } from "../../config/prisma.js";
 import { AppError } from "../../common/errors/AppError.js";
 import { requestProcessing } from "./kb.outbox.js";
@@ -10,14 +11,14 @@ export async function createKnowledgeDocument(userId: string, orgId: string, inp
     const result = await createVersionRecord(userId, orgId, input, documentId);
     return getKnowledgeDocument(orgId, result.document.id);
 }
-export async function listKnowledgeDocuments(orgId: string) { return prisma.knowledgeDocument.findMany({ where: { organizationId: orgId, archivedAt: null }, include, orderBy: { createdAt: "desc" } }); }
+export async function listKnowledgeDocuments(orgId: string, page: unknown = 1) { return prisma.knowledgeDocument.findMany({ where: { organizationId: orgId, archivedAt: null }, include, ...historyPage(page), orderBy: [{ createdAt: "desc" }, { id: "desc" }] }); }
 export async function getKnowledgeDocument(orgId: string, documentId: string) {
     const doc = await prisma.knowledgeDocument.findFirst({ where: { id: documentId, organizationId: orgId }, include });
     if (!doc)
         throw new AppError("Document not found", 404);
     return doc;
 }
-export async function listKnowledgeChunks(orgId: string, documentId: string) { const doc = await getKnowledgeDocument(orgId, documentId); return doc.archivedAt || !doc.currentPublishedVersionId ? [] : prisma.knowledgeChunk.findMany({ where: { organizationId: orgId, documentVersionId: doc.currentPublishedVersionId }, orderBy: { chunkIndex: "asc" } }); }
+export async function listKnowledgeChunks(orgId: string, documentId: string, page: unknown = 1) { const doc = await getKnowledgeDocument(orgId, documentId); return doc.archivedAt || !doc.currentPublishedVersionId ? [] : prisma.knowledgeChunk.findMany({ where: { organizationId: orgId, documentVersionId: doc.currentPublishedVersionId }, ...historyPage(page), orderBy: { chunkIndex: "asc" } }); }
 export async function searchKnowledgeBase(orgId: string, query: SearchKnowledgeQuery) { const limit = Number(query.limit); return retrieveHybrid(orgId, query.q, Number.isInteger(limit) && limit > 0 ? Math.min(limit, 5) : 5); }
 export async function reprocessKnowledgeDocument(orgId: string, documentId: string, userId: string, versionId?: string) {
     const target = await prisma.$transaction(async (tx) => {

@@ -1,9 +1,9 @@
-import { Link, useRouteError } from "react-router-dom";
+import { Link } from "react-router-dom";
 
 export function ErrorPage() {
-  const error = useRouteError();
 
-  console.error("Route error:", error);
+
+  console.warn("SupportIQ operation failed; see the on-screen recovery message.");
 
   return (
     <main

@@ -1,3 +1,4 @@
+import { HistoryPages } from "../../components/HistoryPages";
 import { useCallback, useState } from "react";
 import { useAppSelector } from "../../app/hooks";
 import {
@@ -12,6 +13,7 @@ type Props = {
 };
 
 export function MessageThread({ ticketId }: Props) {
+  const [page, setPage] = useState(1);
   const user = useAppSelector((state) => state.auth.user);
   const [body, setBody] = useState("");
   const [sendError, setSendError] = useState("");
@@ -21,7 +23,7 @@ export function MessageThread({ ticketId }: Props) {
     isLoading,
     isError,
     refetch
-  } = useListMessagesQuery(ticketId);
+  } = useListMessagesQuery({ticketId,page});
 
   const handleRealtimeMessage = useCallback(() => {
     void refetch();
@@ -51,7 +53,7 @@ export function MessageThread({ ticketId }: Props) {
 
       setBody("");
     } catch (error) {
-      console.error("Failed to send message:", error);
+      console.warn("SupportIQ operation failed; see the on-screen recovery message.");
       setSendError(
         getApiErrorMessage(error, "Failed to send message. Please try again.")
       );
@@ -134,6 +136,7 @@ export function MessageThread({ ticketId }: Props) {
           {isSending ? "Sending..." : "Send message"}
         </button>
       </form>
+      <HistoryPages page={page} count={messages.length} onChange={setPage}/>
     </section>
   );
 }

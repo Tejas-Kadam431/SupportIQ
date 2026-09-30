@@ -46,8 +46,8 @@ export function LoginPage() {
       );
 
       navigate("/dashboard");
-    } catch (error) {
-      console.error("Login failed:", error);
+    } catch {
+      console.warn("SupportIQ operation failed; see the on-screen recovery message.");
       setFormError("Invalid email or password. Please try again.");
     }
   }

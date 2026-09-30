@@ -42,7 +42,7 @@ export function DocumentUpload({ orgId }: Props) {
         fileInputRef.current.value = "";
       }
     } catch (error) {
-      console.error("Failed to upload document:", error);
+      console.warn("SupportIQ operation failed; see the on-screen recovery message.");
       setUploadError(getApiErrorMessage(error, "Failed to upload document."));
     }
   }

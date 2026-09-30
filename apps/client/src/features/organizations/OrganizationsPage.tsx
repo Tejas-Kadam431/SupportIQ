@@ -24,7 +24,7 @@ export function OrganizationsPage() {
   const [createOrganization, { isLoading: isCreating }] =
     useCreateOrganizationMutation();
 
-  const organizations = data?.data.organizations ?? [];
+  const organizations = useMemo(() => data?.data.organizations ?? [], [data]);
 
   const counts = useMemo(() => {
     return {
@@ -55,7 +55,7 @@ export function OrganizationsPage() {
       setName("");
       setMessage("Organization created successfully.");
     } catch (error) {
-      console.error("Failed to create organization:", error);
+      console.warn("SupportIQ operation failed; see the on-screen recovery message.");
       setFormError(
         getApiErrorMessage(error, "Failed to create organization. Please try again.")
       );

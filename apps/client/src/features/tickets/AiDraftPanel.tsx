@@ -188,10 +188,7 @@ function AiDraftPanelContent({ ticketId }: Props) {
         response.data.grounding
       );
     } catch (error) {
-      console.error(
-        "Failed to generate AI Copilot response:",
-        error
-      );
+      console.warn("SupportIQ operation failed; see the on-screen recovery message.");
 
       setErrorMessage(
         getApiErrorMessage(
@@ -219,11 +216,8 @@ function AiDraftPanelContent({ ticketId }: Props) {
       setCopyMessage(
         "Suggested reply copied."
       );
-    } catch (error) {
-      console.error(
-        "Failed to copy suggested reply:",
-        error
-      );
+    } catch {
+      console.warn("SupportIQ operation failed; see the on-screen recovery message.");
 
       setCopyMessage(
         "Could not copy automatically. Please select and copy manually."

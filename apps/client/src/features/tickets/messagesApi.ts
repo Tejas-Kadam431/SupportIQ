@@ -26,11 +26,11 @@ export type CreateMessageResponse = {
 
 export const messagesApi = api.injectEndpoints({
   endpoints: (builder) => ({
-    listMessages: builder.query<ListMessagesResponse, string>({
-      query: (ticketId) => `/tickets/${ticketId}/messages`,
+    listMessages: builder.query<ListMessagesResponse, string | {ticketId:string; page:number}>({
+      query: (arg) => `/tickets/${typeof arg === "string" ? arg : arg.ticketId}/messages?page=${typeof arg === "string" ? 1 : arg.page}`,
       providesTags: (_result, _error, ticketId) => [
         "Messages",
-        { type: "Messages", id: ticketId }
+        { type: "Messages", id: typeof ticketId === "string" ? ticketId : ticketId.ticketId }
       ]
     }),
 
