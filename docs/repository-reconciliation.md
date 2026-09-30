@@ -790,3 +790,41 @@ Stage H paths (earlier-stage files not listed here remain preserved):
 - `apps/client/src/features/quality/quality.css`
 - `apps/client/src/features/quality/qualityApi.ts`
 - `apps/client/src/features/quality/reliabilityApi.ts`
+
+
+## Stage I — Production ingestion, recovery and observability
+
+Implementation recorded 2026-09-30 on codex/supportiq-hardening. **Stage I implementation and local acceptance validation are complete:** real Redis/BullMQ, S3-compatible storage and pgvector tests passed. No Stage J work, push or deployment was performed.
+
+### Checkpoint and scope
+
+Before Stage I, reviewed the completed C–H delta against upstream base 6f5b5e237bf18e5dece0a7d1294dfb1778d4793d, checked the 111-path inventory for secrets/generated files, and committed 61bf9fee43542898ff28530cb9bef6dec4085ea3 (Checkpoint completed C-H security, knowledge intelligence and Reliability Lab). The branch/worktree was clean after that checkpoint. Stage I changes remain uncommitted for review.
+
+### Implementation
+
+- Private S3-compatible and filesystem adapters; server-generated keys; strict extension/MIME, PDF signature/parser, UTF-8, byte/text bounds; SHA-256 verification on processing and explicit audits. PDF native failures are contained by a child process with a deadline and V8 heap bound. No malware scanning claim.
+- Object storage precedes the version/outbox transaction. Compensation verifies absence of references and defers ambiguous cleanup. Archive retains historical source objects. Legacy imports add mappings without rewriting immutable source identity.
+- Additive 20260930010000_ingestion_operations migration creates KnowledgeSourceObject, KnowledgeIngestion, KnowledgeIngestionAttempt and KnowledgeOutbox. Existing versions, chunks, vectors, AI/issue/replay history are not rewritten.
+- Focused transactional outbox with SKIP LOCKED/token claims, explicit UTC comparisons, deterministic generation IDs, bounded exponential retry, exhaustion visibility and 30-day eligible dispatched-event retention. A Redis outage no longer turns a durable upload into an HTTP failure.
+- Database-fenced processing, durable attempts, 120-second default renewable leases, bounded reconciler pages and recovery budgets. Old tokens/generations cannot overwrite current attempts. READY/published retries do no work. Staged chunks survive retries and vectors are reused only for compatible model identity.
+- Provider batching defaults to four. Final READY verifies actual stored chunk/vector counts. Lexical and semantic readiness are distinct; configured provider failure cannot produce false semantic readiness. The old publication remains active until explicit publication.
+- Separate API and worker entry points; bounded SIGTERM/SIGINT resource closure; liveness and dependency readiness; safe error taxonomy, context allowlist/redaction, request→outbox→job→attempt correlation, tenant-scoped operational metrics and minimal version-history controls. Reliability Lab execution is unchanged.
+- CI enables mandatory vector/Redis/S3 integration flags. A pinned-source MinIO test image avoids removed upstream registry images. Production storage remains provider-neutral. Existing frontend resolver resolution was made explicit with Vite Zod deduplication after the shared pnpm store exposed a missing optional import; API/shared TypeScript stays pinned to the checkpoint compiler (6.0.3). Unrelated package upgrades were removed.
+
+### Evidence available
+
+- Prisma format/validate/generate and API/worker compilation passed.
+- Fresh 13-migration chain and H→I upgrade passed with the final distinct migration timestamp. The final migration checksum comparison preserved counts and row-content hashes across all 24 pre-existing tables.
+- Unit suite: 222 passed across 16 suites, including actual valid/malformed PDF parsing, size/MIME/control-byte rejection, private filesystem round-trip, key validation, redaction, correlation and bounded shutdown.
+- Full PostgreSQL/Redis/S3/pgvector integration suite: **144 passed across 13 suites, zero skips**. Prior C–H suites remain green. New failures injected include queue refusal, enqueue-before-acknowledgement failure, competing claims, DB rollback, partial provider failure paths, stale recovery, missing/tampered objects, compensation failure, dead-dispatch recovery and inconsistent readiness.
+- Client: all 27 tests passed across six suites, including version-specific retry and access controls. Client build passed with the existing >500 kB bundle warning. API liveness smoke test returned 200 and shutdown exited zero. Worker startup with unavailable Redis emitted sanitized errors and shutdown exited zero.
+- A 399-chunk mocked-provider/real-vector run measured 75 ms upload, 781 ms injected dispatch, 17.31 s processing and 296 ms reconciliation, with maximum embedding concurrency four. The lexical comparison measured 88 ms / 51 ms / 595 ms / 154 ms. These are local single-run timings, not service SLAs or live-provider performance.
+- Frozen lockfile validated. Workflow and Compose YAML parsed; Compose config validated. The pgvector 0.8.6-pg16 registry tag was verified. No GitHub CI run was triggered.
+
+### Validation closure and remaining deployment checks
+
+Docker recovered without deleting data/settings. The pinned-source MinIO image built and real service checks passed. A Windows-reserved S3 port was replaced with configurable localhost port 55442. Shared Jest setup now loads worker cleanup only at teardown, allowing provider mocks to install correctly. The full regression passed after that correction. Paid provider smoke tests and production credentials/deployment checks were not run. Native PDF allocations are not fully constrained by a V8 heap limit. Model-only reindexing of identical bytes is not exposed as an admin operation; do not mutate historical models to force compatibility.
+
+Operational procedures and environment descriptions: [ingestion-operations.md](ingestion-operations.md). Decisions: [ADR 005](adr/005-ingestion-reliability.md). Detailed acceptance/report: [stage-i-report.md](stage-i-report.md).
+
+Stage J remains deferred. After Stage I sign-off, freeze features, complete final regression/demo/accessibility and performance QA, consolidate deployment/architecture docs, and prepare the failure-recovery demonstration and engineering ownership notes. Do not add major architecture during Stage J.

@@ -1,0 +1,30 @@
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.6-pg16
+    environment:
+      POSTGRES_USER: supportiq
+      POSTGRES_PASSWORD: isolated-test-only
+      POSTGRES_DB: supportiq_test
+    ports: ["127.0.0.1:55441:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U supportiq -d supportiq_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  redis:
+    image: redis:7.4.2-alpine
+    ports: ["127.0.0.1:55440:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  storage:
+    build:
+      context: .
+      dockerfile: tooling/minio-test.Dockerfile
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: supportiq-test
+      MINIO_ROOT_PASSWORD: isolated-test-only
+    ports: ["127.0.0.1:${SUPPORTIQ_TEST_S3_PORT:-55442}:9000"]

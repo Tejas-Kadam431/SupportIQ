@@ -1,79 +1,40 @@
-import { Queue, Worker } from "bullmq";
+import { Queue, Worker, UnrecoverableError } from "bullmq";
 import { redisConnection } from "../../config/redis.js";
+import { ingestionConfig } from "../../config/ingestion.js";
 import { processKnowledgeDocument } from "./kb.processing.js";
-
-type ProcessKnowledgeDocumentJob = {
-  orgId: string;
-  documentId: string;
-  versionId: string;
-  requestedById: string;
-};
-
-export const knowledgeProcessingQueue =
-  new Queue<ProcessKnowledgeDocumentJob>("knowledge-processing", {
-    connection: redisConnection,
-    defaultJobOptions: {
-      attempts: 3,
-      backoff: {
-        type: "exponential",
-        delay: 2000
-      },
-      removeOnComplete: {
-        age: 60 * 60,
-        count: 1000
-      },
-      removeOnFail: {
-        age: 24 * 60 * 60,
-        count: 1000
-      }
-    }
-  });
-
-export async function enqueueKnowledgeDocumentProcessing(
-  data: ProcessKnowledgeDocumentJob
-) {
-  return knowledgeProcessingQueue.add("process-document", data, {
-    jobId: `process-version-${data.versionId}-${Date.now()}`
-  });
-}
-
-let worker: Worker<ProcessKnowledgeDocumentJob> | null = null;
-
+import { knowledgeJobId, type DispatchPayload } from "./kb.outbox.js";
+import { classify, log } from "../../common/operations.js";
+let queue: Queue<DispatchPayload> | null = null;
+export function getKnowledgeQueue() { if (!queue) {
+    queue = new Queue<DispatchPayload>("knowledge-processing", { connection: { ...redisConnection, maxRetriesPerRequest: 1, enableOfflineQueue: false, connectTimeout: 3000, commandTimeout: 5000 }, defaultJobOptions: { attempts: ingestionConfig.INGESTION_MAX_ATTEMPTS, backoff: { type: "exponential", delay: 2000 }, removeOnComplete: { age: 86400, count: 1000 }, removeOnFail: { age: 604800, count: 1000 } } });
+    queue.on("error", () => log("queue.error", { category: "QUEUE_UNAVAILABLE" }));
+} return queue; }
+export async function enqueueKnowledgeDocumentProcessing(data: DispatchPayload) { return getKnowledgeQueue().add("process-document", data, { jobId: knowledgeJobId(data.versionId, data.generation) }); }
+let worker: Worker<DispatchPayload> | null = null;
 export function startKnowledgeProcessingWorker() {
-  if (worker) {
+    if (worker)
+        return worker;
+    worker = new Worker<DispatchPayload>("knowledge-processing", async (job) => {
+        if (!job.data.versionId || !job.data.generation)
+            throw new UnrecoverableError("Legacy job requires operator requeue");
+        try {
+            await processKnowledgeDocument(job.data.orgId, job.data.documentId, job.data.versionId, job.data.generation);
+        }
+        catch (error) {
+            const failure = classify(error);
+            if (!failure.retryable)
+                throw new UnrecoverableError(failure.category);
+            throw failure;
+        }
+    }, { connection: redisConnection, concurrency: 2 });
+    worker.on("error", () => log("worker.error", { category: "QUEUE_UNAVAILABLE" }));
+    worker.on("failed", job => log("worker.failed", { jobId: job?.id, knowledgeVersionId: job?.data.versionId }));
     return worker;
-  }
-
-  worker = new Worker<ProcessKnowledgeDocumentJob>(
-    "knowledge-processing",
-    async (job) => {
-      if (!job.data.versionId) throw new Error("Legacy job requires explicit version requeue");
-      await processKnowledgeDocument(job.data.orgId, job.data.documentId, job.data.versionId);
-    },
-    {
-      connection: redisConnection,
-      concurrency: 2
-    }
-  );
-
-  worker.on("completed", (job) => {
-    console.log(`Knowledge document processed: ${job.data.documentId}`);
-  });
-
-  worker.on("failed", (job, error) => {
-    console.error(
-      `Knowledge document processing failed: ${job?.data.documentId}`,
-      { event: "knowledge.worker_failed" }
-    );
-  });
-
-  return worker;
 }
-export async function closeKnowledgeProcessingResources() {
-  if (worker) {
-    await worker.close();
+export async function closeKnowledgeProcessingResources(force = false) { if (worker) {
+    await worker.close(force);
     worker = null;
-  }
-
-  await knowledgeProcessingQueue.close();
-}
+} if (queue) {
+    await queue.close();
+    queue = null;
+} }

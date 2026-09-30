@@ -314,6 +314,8 @@ model KnowledgeDocument {
 }
 
 model KnowledgeDocumentVersion {
+  ingestion        KnowledgeIngestion?
+  sourceObject     KnowledgeSourceObject?
   evaluationScopes EvaluationScopeVersion[]
   candidateIssues  KnowledgeIssue[]
   issueSources     KnowledgeIssueSource[]
@@ -656,4 +658,71 @@ model EvaluationResult {
 
   @@unique([experimentId, caseId])
   @@index([experimentId, classification])
+}
+
+model KnowledgeSourceObject {
+  versionId String                   @id
+  objectKey String                   @unique
+  backend   String
+  version   KnowledgeDocumentVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+}
+
+model KnowledgeIngestion {
+  versionId      String                      @id
+  generation     Int                         @default(1)
+  requestId      String
+  stage          String                      @default("QUEUED")
+  attempts       Int                         @default(0)
+  retryable      Boolean                     @default(true)
+  errorCategory  String?
+  heartbeatAt    DateTime?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  chunksTotal    Int                         @default(0)
+  chunksEmbedded Int                         @default(0)
+  embeddingModel String?
+  lexicalReady   Boolean                     @default(false)
+  semanticReady  Boolean                     @default(false)
+  updatedAt      DateTime                    @updatedAt
+  version        KnowledgeDocumentVersion    @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  history        KnowledgeIngestionAttempt[]
+  outbox         KnowledgeOutbox[]
+
+  @@index([stage, updatedAt])
+}
+
+model KnowledgeIngestionAttempt {
+  id            String             @id @default(cuid())
+  versionId     String
+  generation    Int
+  attempt       Int
+  jobId         String
+  requestId     String
+  stage         String
+  errorCategory String?
+  retryable     Boolean            @default(true)
+  startedAt     DateTime           @default(now())
+  completedAt   DateTime?
+  durationMs    Int?
+  ingestion     KnowledgeIngestion @relation(fields: [versionId], references: [versionId], onDelete: Cascade)
+
+  @@unique([versionId, attempt])
+}
+
+model KnowledgeOutbox {
+  id            String             @id @default(cuid())
+  versionId     String
+  generation    Int
+  requestId     String
+  createdAt     DateTime           @default(now())
+  availableAt   DateTime           @default(now())
+  dispatchedAt  DateTime?
+  claimToken    String?
+  claimUntil    DateTime?
+  attempts      Int                @default(0)
+  errorCategory String?
+  ingestion     KnowledgeIngestion @relation(fields: [versionId], references: [versionId], onDelete: Cascade)
+
+  @@unique([versionId, generation])
+  @@index([dispatchedAt, availableAt])
 }

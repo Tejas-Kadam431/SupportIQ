@@ -1,3 +1,5 @@
+import { getObjectStorage } from "../common/storage.js";
+import { env } from "../config/env.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
@@ -19,7 +21,7 @@ import { kbRoutes } from "../modules/knowledge-base/kb.routes.js";
 import { signAccessToken } from "../common/utils/jwt.js";
 import { errorHandler } from "../common/errors/errorHandler.js";
 jest.mock("../modules/knowledge-base/kb.vector.js", () => ({ ...jest.requireActual("../modules/knowledge-base/kb.vector.js"), saveKnowledgeChunkEmbedding: jest.fn(async () => false) }));
-jest.mock("../modules/knowledge-base/kb.queue.js", () => ({ enqueueKnowledgeDocumentProcessing: jest.fn(async () => ({})), closeKnowledgeProcessingResources: async () => {} }));
+jest.mock("../modules/knowledge-base/kb.queue.js", () => ({ enqueueKnowledgeDocumentProcessing: jest.fn(async () => ({})), closeKnowledgeProcessingResources: async () => { } }));
 const app = express();
 app.use(express.json());
 app.use("/organizations/:orgId/kb", kbRoutes);
@@ -84,8 +86,9 @@ test("processing stages immutable source hashes and incomplete embedding metadat
     expect((await retrieveHybrid(f.org.id, "password reset")).results[0].documentVersionId).toBe(v.id);
 });
 test("failed replacement leaves previous publication and chunks intact", async () => {
-    const f = await fixture(), first = await published(f), second = await version(f, "", first.document.id);
-    await expect(processKnowledgeDocument(f.org.id, first.document.id, second.version.id)).rejects.toMatchObject({ statusCode: 503 });
+    const f = await fixture(), first = await published(f), second = await version(f, "Valid replacement", first.document.id);
+    await getObjectStorage().delete(second.version.storageRef);
+    await expect(processKnowledgeDocument(f.org.id, first.document.id, second.version.id)).rejects.toMatchObject({ retryable: false });
     expect((await prisma.knowledgeDocumentVersion.findUniqueOrThrow({ where: { id: second.version.id } })).status).toBe("FAILED");
     expect((await searchLexical(f.org.id, "password reset", 20))[0].documentVersionId).toBe(first.version.id);
 });
@@ -95,8 +98,9 @@ test("tampered uploaded file fails verification; completed publication reprocess
     expect((await processKnowledgeDocument(f.org.id, first.document.id, first.version.id)).status).toBe("UNCHANGED");
     expect(await prisma.knowledgeChunk.findMany({ where: { documentVersionId: first.version.id } })).toEqual(before);
     const second = await version(f, "New source", first.document.id);
-    await fs.writeFile(second.version.storageRef, "Changed outside upload");
-    await expect(processKnowledgeDocument(f.org.id, first.document.id, second.version.id)).rejects.toMatchObject({ statusCode: 503 });
+    await getObjectStorage().delete(second.version.storageRef);
+    await getObjectStorage().put(second.version.storageRef, Buffer.from("Changed outside upload"), "text/plain");
+    await expect(processKnowledgeDocument(f.org.id, first.document.id, second.version.id)).rejects.toMatchObject({ retryable: false });
 });
 test.each(["UPLOADED", "PROCESSING", "FAILED"] as const)("%s cannot publish", async (status) => {
     const f = await fixture(), v = await version(f);
@@ -172,6 +176,8 @@ vectorTest("real vector SQL excludes superseded/unpublished/archived versions an
     const f = await fixture(), first = await prepared(f), second = await prepared(f, "Password reset revised", first.document.id);
     const vector = JSON.stringify([1, ...Array(1535).fill(0)]);
     for (const v of [first, second])
+        await prisma.knowledgeDocumentVersion.update({where:{id:v.version.id},data:{embeddingModel:env.OPENAI_EMBEDDING_MODEL}});
+    for (const v of [first, second])
         await prisma.$executeRaw `UPDATE "KnowledgeChunk" SET embedding=${vector}::vector WHERE "documentVersionId"=${v.version.id}`;
     await publishKnowledgeVersion(f.owner.id, f.org.id, first.document.id, first.version.id, null);
     expect((await queryVectorCandidates(f.org.id, JSON.parse(vector), 20)).map(c => c.documentVersionId)).toEqual([first.version.id]);
@@ -204,18 +210,19 @@ test("processing lease excludes duplicate workers and fences a stale completion 
     let entered!: () => void;
     const waiting = new Promise<void>(resolve => { entered = resolve; });
     const hold = new Promise<void>(resolve => { release = resolve; });
-    jest.mocked(saveKnowledgeChunkEmbedding).mockImplementationOnce(async () => { entered(); await hold; return false; });
+    const storage = getObjectStorage(), original = storage.get.bind(storage);
+    const read = jest.spyOn(storage, "get").mockImplementationOnce(async (key) => { entered(); await hold; return original(key); });
     const stale = processKnowledgeDocument(f.org.id, target.document.id, target.version.id);
     // Attach the rejection handler before releasing the intentionally stale worker.
     const staleResult = stale.then(value => ({ value, error: null }), error => ({ value: null, error }));
     try {
         await waiting;
-        await expect(processKnowledgeDocument(f.org.id, target.document.id, target.version.id)).rejects.toMatchObject({ statusCode: 409 });
+        expect((await processKnowledgeDocument(f.org.id, target.document.id, target.version.id)).status).toBe("UNCHANGED");
         await prisma.knowledgeDocumentVersion.update({ where: { id: target.version.id }, data: { leaseUntil: new Date(0) } });
         expect((await processKnowledgeDocument(f.org.id, target.document.id, target.version.id)).status).toBe("READY");
         const chunks = await prisma.knowledgeChunk.findMany({ where: { documentVersionId: target.version.id } });
         release();
-        expect((await staleResult).error).toMatchObject({ statusCode: 503 });
+        expect((await staleResult).error).toMatchObject({ category: "PROCESSING_STALE" });
         expect(await prisma.knowledgeChunk.findMany({ where: { documentVersionId: target.version.id } })).toEqual(chunks);
         expect((await prisma.knowledgeDocumentVersion.findUniqueOrThrow({ where: { id: target.version.id } })).status).toBe("READY");
         expect(await prisma.activityLog.count({ where: { organizationId: f.org.id, message: "VERSION_PROCESSING_FAILED" } })).toBe(0);
@@ -225,13 +232,12 @@ test("processing lease excludes duplicate workers and fences a stale completion 
         await staleResult;
     }
 });
-
-
 test("queue failure retains the uploaded version for explicit retry", async () => {
- const f=await fixture(), first=await published(f);
- jest.mocked(enqueueKnowledgeDocumentProcessing).mockRejectedValueOnce(new Error("Queue unavailable"));
- await expect(createKnowledgeDocument(f.owner.id,f.org.id,await source("Replacement retained after queue failure"),first.document.id)).rejects.toMatchObject({statusCode:503});
- const history=await getVersionHistory(f.owner.id,f.org.id,first.document.id);
- expect(history.currentPublishedVersionId).toBe(first.version.id);
- expect(history.versions[0]).toMatchObject({versionNumber:2,status:"UPLOADED"});
+    const f = await fixture(), first = await published(f);
+    jest.mocked(enqueueKnowledgeDocumentProcessing).mockRejectedValueOnce(new Error("Queue unavailable"));
+    await createKnowledgeDocument(f.owner.id, f.org.id, await source("Replacement retained after queue failure"), first.document.id);
+    expect(enqueueKnowledgeDocumentProcessing).not.toHaveBeenCalled();
+    const history = await getVersionHistory(f.owner.id, f.org.id, first.document.id);
+    expect(history.currentPublishedVersionId).toBe(first.version.id);
+    expect(history.versions[0]).toMatchObject({ versionNumber: 2, status: "UPLOADED" });
 });

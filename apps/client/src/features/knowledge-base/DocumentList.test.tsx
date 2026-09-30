@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/re
 import { test, expect, vi, afterEach, beforeEach } from "vitest";
 import { VersionHistory } from "./DocumentList";
 const { publish, upload } = vi.hoisted(() => ({ publish: vi.fn(), upload: vi.fn() }));
-vi.mock("./kbApi", () => ({ useKnowledgeVersionsQuery: () => ({ data: { data: { document: { currentPublishedVersionId: "v1", versions: [{ id: "v2", versionNumber: 2, status: "READY", createdAt: "2026-09-27" }, { id: "v1", versionNumber: 1, status: "PUBLISHED", createdAt: "2026-09-26", publishedAt: "2026-09-26" }] } } } }), usePublishKnowledgeVersionMutation: () => [publish, {}], useUploadKnowledgeVersionMutation: () => [upload, {}] }));
+vi.mock("./kbApi", () => ({ useKnowledgeVersionsQuery: () => ({ data: { data: { document: { currentPublishedVersionId: "v1", versions: [{ id: "v2", versionNumber: 2, status: "READY", createdAt: "2026-09-27" }, { id: "v1", versionNumber: 1, status: "PUBLISHED", createdAt: "2026-09-26", publishedAt: "2026-09-26" }] } } } }), useReprocessKnowledgeDocumentMutation: () => [vi.fn(), {}], usePublishKnowledgeVersionMutation: () => [publish, {}], useUploadKnowledgeVersionMutation: () => [upload, {}] }));
 beforeEach(() => { vi.resetAllMocks(); publish.mockReturnValue({ unwrap: async () => ({}) }); upload.mockReturnValue({ unwrap: async () => ({}) }); });
 afterEach(cleanup);
 test("ready publication submits observed current pointer and shows retained history", async () => {

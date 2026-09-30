@@ -12,6 +12,6 @@
     "test": "echo \"tests not configured yet\""
   },
   "devDependencies": {
-    "typescript": "latest"
+    "typescript": "6.0.3"
   }
 }

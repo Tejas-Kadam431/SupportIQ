@@ -34,7 +34,7 @@ beforeEach(async () => {
     mockEmbed.mockReset();
     (generateWithProviders as jest.Mock).mockReset();
     (generateWithProviders as jest.Mock).mockResolvedValue({ draft: "Use the documented procedure.", rawDraft: "Use the documented procedure.", provider: "gemini", model: "fixture", requests: [{ provider: "gemini" }], attempts: [], fallbackReason: null });
-    await prisma.knowledgeDocument.updateMany({ where: { organizationId: { in: [orgId, otherId] } }, data:{archivedAt:new Date()} });
+    await prisma.knowledgeDocument.updateMany({ where: { organizationId: { in: [orgId, otherId] } }, data: { archivedAt: new Date() } });
     const d = await document("READY");
     docId = d.id;
     const t = await prisma.ticket.create({ data: { organizationId: orgId, customerId, title: "Password reset", description: "Password reset account" } });
@@ -42,22 +42,30 @@ beforeEach(async () => {
 });
 afterAll(async () => { await prisma.organization.deleteMany({ where: { id: { in: [orgId, otherId] } } }); await prisma.user.deleteMany({ where: { id: { in: [userId, customerId] } } }); await prisma.$disconnect(); });
 async function document(status: "READY" | "FAILED" = "READY", organizationId = orgId) { return prisma.knowledgeDocument.create({ data: { organizationId, uploadedById: userId, fileName: "fixture", originalName: "Fixture", mimeType: "text/plain", sizeBytes: 10, storagePath: "fixture", status } }); }
-async function chunk(content:string,documentId=docId,organizationId=orgId){
- let v=await prisma.knowledgeDocumentVersion.findFirst({where:{documentId}});
- if(!v){const d=await prisma.knowledgeDocument.findUniqueOrThrow({where:{id:documentId}});v=await prisma.knowledgeDocumentVersion.create({data:{documentId,versionNumber:1,status:d.status==="FAILED"?"FAILED":"READY",originalName:d.originalName,mimeType:d.mimeType,sizeBytes:10,storageRef:d.storagePath,createdByIdentity:userId,contentHash:contentHash(content),semanticIndexedChunks:0}});}
- return prisma.knowledgeChunk.create({data:{documentId,documentVersionId:v.id,organizationId,chunkIndex:seq++,content,contentHash:contentHash(content),tokenCount:10}});
+async function chunk(content: string, documentId = docId, organizationId = orgId) {
+    let v = await prisma.knowledgeDocumentVersion.findFirst({ where: { documentId } });
+    if (!v) {
+        const d = await prisma.knowledgeDocument.findUniqueOrThrow({ where: { id: documentId } });
+        v = await prisma.knowledgeDocumentVersion.create({ data: { documentId, versionNumber: 1, status: d.status === "FAILED" ? "FAILED" : "READY", originalName: d.originalName, mimeType: d.mimeType, sizeBytes: 10, storageRef: d.storagePath, createdByIdentity: userId, contentHash: contentHash(content), semanticIndexedChunks: 0, embeddingModel: env.OPENAI_EMBEDDING_MODEL } });
+    }
+    return prisma.knowledgeChunk.create({ data: { documentId, documentVersionId: v.id, organizationId, chunkIndex: seq++, content, contentHash: contentHash(content), tokenCount: 10 } });
 }
-async function publishFixtures(){await prisma.$transaction(async tx=>{
- const docs=await tx.knowledgeDocument.findMany({where:{organizationId:{in:[orgId,otherId]},archivedAt:null,currentPublishedVersionId:null},include:{versions:true}});
- for(const d of docs){const v=d.versions.find(v=>v.status==="READY");if(!v)continue;
- await tx.knowledgeDocumentVersion.update({where:{id:v.id},data:{status:"PUBLISHED",publishedAt:new Date()}});
- await tx.knowledgeDocument.update({where:{id:d.id},data:{currentPublishedVersionId:v.id,nextVersionNumber:2}});}
-});}
-async function searchLexical(...args:Parameters<typeof rawLexical>){await publishFixtures();return rawLexical(...args);}
-async function retrieveHybrid(...args:Parameters<typeof rawHybrid>){await publishFixtures();return rawHybrid(...args);}
-async function queryVectorCandidates(...args:Parameters<typeof rawVector>){await publishFixtures();return rawVector(...args);}
-async function generate(){await publishFixtures();return generateAiDraftReply(userId,ticketId,{tone:"PROFESSIONAL"});}
-
+async function publishFixtures() {
+    await prisma.$transaction(async (tx) => {
+        const docs = await tx.knowledgeDocument.findMany({ where: { organizationId: { in: [orgId, otherId] }, archivedAt: null, currentPublishedVersionId: null }, include: { versions: true } });
+        for (const d of docs) {
+            const v = d.versions.find(v => v.status === "READY");
+            if (!v)
+                continue;
+            await tx.knowledgeDocumentVersion.update({ where: { id: v.id }, data: { status: "PUBLISHED", publishedAt: new Date() } });
+            await tx.knowledgeDocument.update({ where: { id: d.id }, data: { currentPublishedVersionId: v.id, nextVersionNumber: 2 } });
+        }
+    });
+}
+async function searchLexical(...args: Parameters<typeof rawLexical>) { await publishFixtures(); return rawLexical(...args); }
+async function retrieveHybrid(...args: Parameters<typeof rawHybrid>) { await publishFixtures(); return rawHybrid(...args); }
+async function queryVectorCandidates(...args: Parameters<typeof rawVector>) { await publishFixtures(); return rawVector(...args); }
+async function generate() { await publishFixtures(); return generateAiDraftReply(userId, ticketId, { tone: "PROFESSIONAL" }); }
 test("FTS tokenization, ranked exact terms, stopwords and parameter safety", async () => {
     const exact = await chunk("Passwords resetting account password reset");
     await chunk("Account billing");
@@ -137,9 +145,12 @@ test("FTS GIN expression exists and planner can use it", async () => {
         indexdef: string;
     }>> `SELECT indexdef FROM pg_indexes WHERE indexname='KnowledgeChunk_content_fts_idx'`;
     expect(indexes[0].indexdef).toContain("USING gin");
-    const plan = await prisma.$transaction(async (tx) => { await tx.$executeRawUnsafe("SET LOCAL enable_seqscan=off"); return tx.$queryRawUnsafe<Array<{
-        "QUERY PLAN": string;
-    }>>("EXPLAIN SELECT id FROM \"KnowledgeChunk\" WHERE to_tsvector('english',content) @@ plainto_tsquery('english','password')"); });
+    const plan = await prisma.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe("SET LOCAL enable_seqscan=off");
+        return tx.$queryRawUnsafe<Array<{
+            "QUERY PLAN": string;
+        }>>("EXPLAIN SELECT id FROM \"KnowledgeChunk\" WHERE to_tsvector('english',content) @@ plainto_tsquery('english','password')");
+    });
     expect(JSON.stringify(plan)).toContain("KnowledgeChunk_content_fts_idx");
 });
 vectorTest("real pgvector ranking and tenant/status filtering", async () => {
@@ -156,6 +167,6 @@ vectorTest("real pgvector ranking and tenant/status filtering", async () => {
     mockEmbed.mockResolvedValue({ data: [{ embedding: vector(1) }] });
     const result = await retrieveHybrid(orgId, "Password reset");
     expect(result.results[0].matchedBy).toEqual(["semantic", "lexical"]);
-    await chunk("Unembedded",(await document()).id);
+    await chunk("Unembedded", (await document()).id);
     expect((await retrieveHybrid(orgId, "Password reset")).diagnostics.semanticStatus).toBe("INDEX_INCOMPLETE");
 });
