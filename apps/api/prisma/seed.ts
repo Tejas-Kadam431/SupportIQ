@@ -1,10 +1,11 @@
-import { assertDemoResetAllowed } from "./seedGuard.js";
+import { assertDemoResetAllowed, assertEmptyDemoProvisionAllowed } from "./seedGuard.js";
 import { seedReliabilityLab } from "./seedReliability.js";
 import { createSeedKnowledge } from "./seedKnowledge.js";
 import {
   ActivityType,
   KnowledgeDocumentStatus,
   PrismaClient,
+  Prisma,
   Role,
   TicketPriority,
   TicketStatus
@@ -26,8 +27,16 @@ async function resetDatabase() {
 }
 
 async function main() {
-  assertDemoResetAllowed(process.env);
-  await resetDatabase();
+  if (process.env.SUPPORTIQ_PROVISION_EMPTY_DEMO) {
+    // Run only before exposing a newly provisioned database to application traffic.
+    const delegates = prisma as unknown as Record<string, { count(): Promise<number> }>;
+    const counts = await Promise.all(Object.values(Prisma.ModelName).map(name =>
+      delegates[name.charAt(0).toLowerCase() + name.slice(1)].count()));
+    assertEmptyDemoProvisionAllowed(process.env, counts);
+  } else {
+    assertDemoResetAllowed(process.env);
+    await resetDatabase();
+  }
 
   const passwordHash = await hashPassword("password123");
 

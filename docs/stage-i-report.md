@@ -2,7 +2,7 @@
 
 Status: **Stage I implementation and local acceptance validation complete.** No push, deployment or Stage J implementation.
 
-1. **Checkpoint:** 61bf9fee43542898ff28530cb9bef6dec4085ea3 committed the reviewed completed C–H work before Stage I. Branch remains codex/supportiq-hardening, based on reconciled upstream 6f5b5e237bf18e5dece0a7d1294dfb1778d4793d.
+1. **Checkpoint:** 61bf9fee43542898ff28530cb9bef6dec4085ea3 committed the reviewed completed C–H work before Stage I. Branch remains supportiq-hardening, based on reconciled upstream 6f5b5e237bf18e5dece0a7d1294dfb1778d4793d.
 2. **Files:** ingestion/storage/operations utilities, API and worker entry points, knowledge services, upload and PDF parsing, version-history UI, tests, CI/Compose, schema/migration, compiler pins and documentation. Complete path inventory follows below.
 3. **Schema:** four additive tables: KnowledgeSourceObject, KnowledgeIngestion, KnowledgeIngestionAttempt, KnowledgeOutbox. Final migration: 20260930010000_ingestion_operations. No old version/chunk/history rewrite.
 4. **Storage:** narrow private S3/filesystem interface; AWS SDK isolated from domain services; server-owned knowledge/UUID keys.

@@ -57,7 +57,7 @@
   letter-spacing: -0.075em;
 }
 
-.auth-hero-content > p:last-child {
+.auth-hero-content > p:not(.auth-eyebrow) {
   max-width: 620px;
   margin: 1.4rem 0 0;
   color: #475569;
@@ -291,3 +291,13 @@
   object-fit: cover;
   box-shadow: 0 16px 34px rgba(15, 107, 255, 0.26);
 }
+
+.auth-proof { display: flex; gap: .6rem; align-items: center; margin-top: 1.5rem; color: #334155; font-size: .9rem; }
+.auth-proof > span { display: grid; place-items: center; width: 1.6rem; height: 1.6rem; border-radius: 50%; background: #dcfce7; color: #166534; }
+.auth-feature-grid .auth-feature-number { color: #0f6bff; font-size: .75rem; font-weight: 800; margin: 0 0 .8rem; }
+.auth-card-header .auth-card-kicker { color: #0f6bff; font-size: .7rem; letter-spacing: .12em; font-weight: 800; margin-bottom: .6rem; }
+.auth-password { position: relative; }
+.auth-password input { width: 100%; box-sizing: border-box; padding-right: 4rem; }
+.auth-password button { position: absolute; right: .6rem; top: 50%; transform: translateY(-50%); border: 0; background: transparent; color: #0f6bff; font-weight: 700; padding: .5rem; cursor: pointer; }
+.auth-field-hint { margin: .5rem 0 0; color: #64748b; font-size: .8rem; line-height: 1.5; }
+.auth-page button:focus-visible, .auth-page a:focus-visible { outline: 3px solid #2563eb; outline-offset: 3px; }

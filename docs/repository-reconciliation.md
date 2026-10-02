@@ -1,11 +1,11 @@
 # Authoritative repository reconciliation
 
-Current implementation update: **Stage C — session reuse protection and membership consistency**, appended below on 2026-09-26. Stage A/B checkout-state statements are historical; the validated A/B work was subsequently committed as `817bebb` and pushed to `codex/supportiq-hardening`.
+Current implementation update: **Stage C — session reuse protection and membership consistency**, appended below on 2026-09-26. Stage A/B checkout-state statements are historical; the validated A/B work was subsequently committed as `817bebb` and pushed to `supportiq-hardening`.
 
 ## Stage A validated — 2026-09-25
 
-Active hardening worktree: `C:/Users/kadam/.codex/visualizations/2026/09/24/01a0d482-ea6d-7251-a026-67608cd44412/supportiq-hardening`.
-Branch: `codex/supportiq-hardening`; HEAD/base: `6f5b5e237bf18e5dece0a7d1294dfb1778d4793d`, confirmed against live GitHub main. Original checkout on old main is preserved. The historical content-overlay description below refers to that original checkout, not this aligned branch.
+Active hardening worktree: `the dedicated SupportIQ hardening checkout`.
+Branch: `supportiq-hardening`; HEAD/base: `6f5b5e237bf18e5dece0a7d1294dfb1778d4793d`, confirmed against live GitHub main. Original checkout on old main is preserved. The historical content-overlay description below refers to that original checkout, not this aligned branch.
 
 Durable verified backup: sibling `supportiq-backup-20260925/manifest.json` and `delta/`, with raw SHA-256 hashes and Git blob identities. The older temporary backup also exists. No commits, pushes, resets, stashes or destructive operations were performed.
 
@@ -66,7 +66,7 @@ No AI, feedback, dashboard, auth refresh, schema or migration implementation was
 
 Final result: **95 tests passed across six infrastructure-free suites**, including real Socket.IO transports, with `--detectOpenHandles` and no reported leaked handles. Normal API/client builds, `git diff --check` and frozen-lockfile verification passed. Full discovery lists eight suites including the two infrastructure-dependent suites.
 
-Final Git state: `codex/supportiq-hardening` at upstream `6f5b5e2`, 0 ahead / 0 behind by commits, with **18 modified and 13 untracked files**, all intentionally uncommitted. No migration/schema/Copilot/refresh-service delta exists against upstream. A final binary tracked patch, untracked file copies and complete `git status` were saved alongside the durable Stage A backup as `hardening-tracked.patch`, `hardening-untracked/` and `hardening-status.txt`. Original checkout file hashes still match the pre-alignment backup.
+Final Git state: `supportiq-hardening` at upstream `6f5b5e2`, 0 ahead / 0 behind by commits, with **18 modified and 13 untracked files**, all intentionally uncommitted. No migration/schema/Copilot/refresh-service delta exists against upstream. A final binary tracked patch, untracked file copies and complete `git status` were saved alongside the durable Stage A backup as `hardening-tracked.patch`, `hardening-untracked/` and `hardening-status.txt`. Original checkout file hashes still match the pre-alignment backup.
 
 API normal build and client normal build pass without compiler overrides. Frozen-lockfile metadata verification passes; the first offline attempt lacked optional-platform metadata, then online verification succeeded without installing packages or running scripts. All infrastructure-free suites execute locally, including real Socket.IO transport tests. PostgreSQL/Redis integration tests remain pending an isolated test environment; CI discovers both auth and RBAC suites.
 
@@ -280,7 +280,7 @@ No secrets were printed, no original changes discarded, no commits or deployment
 
 ## Stage C — session reuse protection and membership consistency
 
-Implemented 2026-09-26 in the authoritative hardening worktree, branch `codex/supportiq-hardening`, starting at `817bebb` (upstream base `6f5b5e237bf18e5dece0a7d1294dfb1778d4793d`). These changes are intentionally **uncommitted and unpushed**. No deployment, production migration or seed was performed. Stage A/B implementation and the original checkout are preserved; Stage C adds only the reopening eligibility check needed to preserve assignment consistency across Phase 1 transitions.
+Implemented 2026-09-26 in the authoritative hardening worktree, branch `supportiq-hardening`, starting at `817bebb` (upstream base `6f5b5e237bf18e5dece0a7d1294dfb1778d4793d`). These changes are intentionally **uncommitted and unpushed**. No deployment, production migration or seed was performed. Stage A/B implementation and the original checkout are preserved; Stage C adds only the reopening eligibility check needed to preserve assignment consistency across Phase 1 transitions.
 
 ### Previous risks and refresh-session model
 
@@ -339,14 +339,14 @@ Lock semantics were checked against PostgreSQL's [row-lock documentation](https:
 - Local full integration execution uses a temporary Jest config outside the repository to stub **only the unrelated knowledge-processing queue**, because no isolated Redis instance was available. An initial run with the queue mapping in the wrong order failed; corrected mapping passed all suites without open-handle reports. Redis/knowledge-worker integration itself was not tested. CI retains the normal PostgreSQL + Redis configuration and discovers these tests without the local stub.
 - Client StrictMode regression: **2 tests passed** in Vitest/jsdom, including rejected refresh with no automatic duplicate.
 - Normal API build and normal client build: passed. git diff --check: passed. Frozen lockfile verification: passed offline with ignore-scripts/lockfile-only; lockfile unchanged. Existing ts-jest/TypeScript compatibility and ~572 kB client bundle warnings remain.
-- No automatic commit, push, merge, deployment or production seed. Git remains on `codex/supportiq-hardening` at `817bebb`, with Stage C changes only (12 modified files, nine new paths/files).
+- No automatic commit, push, merge, deployment or production seed. Git remains on `supportiq-hardening` at `817bebb`, with Stage C changes only (12 modified files, nine new paths/files).
 
 This bounded Stage C session/assignment security work is complete subject to the documented rollout and Redis-validation limits; it is not a blanket claim that all P0 security/concurrency work is finished. The exact next recommended phase is **feedback/message atomicity + immutable Copilot/knowledge provenance**, before hybrid retrieval and evidence-policy redesign. That phase has not begun.
 
 
 ## Stage D — Copilot decision integrity and provenance
 
-Implemented 2026-09-26 on codex/supportiq-hardening at 817bebb. Stage C and Stage D remain uncommitted and unpushed. Stage C's 21 changed/new files were preserved before Stage D in the sibling supportiq-stage-d-baseline directory with a manifest. No deployment, production migration or Stage E work was performed.
+Implemented 2026-09-26 on supportiq-hardening at 817bebb. Stage C and Stage D remain uncommitted and unpushed. Stage C's 21 changed/new files were preserved before Stage D in the sibling supportiq-stage-d-baseline directory with a manifest. No deployment, production migration or Stage E work was performed.
 
 ### Decision transaction and immutable linkage
 
@@ -397,14 +397,14 @@ Stage D changes schema plus migration 20260926010000_copilot_history; AI control
 - Client tests: nine passed in two suites (seven Copilot flow tests plus two Stage C startup-auth tests). API TypeScript build and client TypeScript/Vite production build passed. Frozen lockfile validation passed offline with ignore-scripts/lockfile-only; no dependency changes. git diff --check passed. Existing ts-jest compatibility warnings remain; client output is about 573 kB before gzip.
 - Validation used only loopback isolated databases. Fixture SQL and logs remain in sibling supportiq-stage-d-test; the temporary PostgreSQL cluster is stopped after validation. No production data or services were changed.
 
-The Stage D quality bar is met for new persisted runs and the authoritative Copilot send/reject flow, subject to the legacy, deletion, external-provider and failure-record limitations above. Git remains at 817bebb on codex/supportiq-hardening with combined Stage C/D work uncommitted (19 modified files and 18 new files). No commit, push or deployment was performed.
+The Stage D quality bar is met for new persisted runs and the authoritative Copilot send/reject flow, subject to the legacy, deletion, external-provider and failure-record limitations above. Git remains at 817bebb on supportiq-hardening with combined Stage C/D work uncommitted (19 modified files and 18 new files). No commit, push or deployment was performed.
 
 The exact recommended next phase is **Stage E — Evidence Policy v2 + Hybrid Retrieval**: measured retrieval/evidence fixtures, vector-plus-lexical retrieval, and deterministic evidence gating to replace the weak legacy logic. Stage E has not begun. Knowledge versions, Reliability Lab, object storage and broader analytics redesign remain later work.
 
 
 ## Stage E — Hybrid retrieval and evidence policy v2
 
-Implemented 2026-09-26/27 in the authoritative codex/supportiq-hardening worktree at 817bebb. Stage C/D work was preserved in sibling supportiq-stage-e-baseline with a manifest before editing. This appendix supersedes Stage D's next-phase recommendation only; earlier engineering history remains intact. No commit, push, deployment, production migration or automatic knowledge reprocessing was performed.
+Implemented 2026-09-26/27 in the authoritative supportiq-hardening worktree at 817bebb. Stage C/D work was preserved in sibling supportiq-stage-e-baseline with a manifest before editing. This appendix supersedes Stage D's next-phase recommendation only; earlier engineering history remains intact. No commit, push, deployment, production migration or automatic knowledge reprocessing was performed.
 
 ### Retrieval contract and query design
 
@@ -478,7 +478,7 @@ This bounded implementation is complete with the explicit pgvector execution, li
 
 ## Stage F — Immutable knowledge versions and publication provenance
 
-Implemented and validated 2026-09-27/28 in the authoritative `codex/supportiq-hardening` worktree at `817bebb2fed91d7437fefc85cb94eb9da11f3829`. The sibling `supportiq-stage-f-baseline` preserves the 56 dirty/new files present before this phase, with a manifest. Earlier Stage C–E work remains intact and uncommitted. This appendix supersedes Stage E's next-phase recommendation; earlier appendices remain historical records. No commit, push, deployment, production migration or Stage G implementation occurred.
+Implemented and validated 2026-09-27/28 in the authoritative `supportiq-hardening` worktree at `817bebb2fed91d7437fefc85cb94eb9da11f3829`. The sibling `supportiq-stage-f-baseline` preserves the 56 dirty/new files present before this phase, with a manifest. Earlier Stage C–E work remains intact and uncommitted. This appendix supersedes Stage E's next-phase recommendation; earlier appendices remain historical records. No commit, push, deployment, production migration or Stage G implementation occurred.
 
 ### Domain and product decision
 
@@ -548,13 +548,13 @@ Local source files remain on disk behind a storage reference; UUID uploads and a
 
 Stage F changes **36 paths relative to the saved Stage E baseline**, including this appendix: schema, two migrations, seed/helper; shared hash; version/processing/queue/upload/parser/service/controller/routes; shared retrieval scope and semantic/lexical/hybrid contracts; Copilot provenance/linkage/resolution; KB list/history/upload and Copilot source UI/API types; Stage F/migration/client tests plus necessary Stage D/E/retrieval fixtures. The exact path inventory is in `supportiq-stage-f-test/changed-files.json` (documentation is included at completion). Previous security, feedback, ticket and analytics work remains present.
 
-The Stage F quality bar is met for the locally validated lexical/degraded path: publishing v2 changes future retrieval while old runs keep exact v1 content/identity, and failed replacement processing leaves v1 serving. Full deployed hybrid-path validation still requires the mandatory pgvector-enabled CI suite and the existing external-provider/Redis checks; no broader production-readiness claim is made. Git remains on `codex/supportiq-hardening` at `817bebb`, with the combined Stage C–F delta uncommitted: 36 modified tracked files, 39 untracked files, and nothing staged.
+The Stage F quality bar is met for the locally validated lexical/degraded path: publishing v2 changes future retrieval while old runs keep exact v1 content/identity, and failed replacement processing leaves v1 serving. Full deployed hybrid-path validation still requires the mandatory pgvector-enabled CI suite and the existing external-provider/Redis checks; no broader production-readiness claim is made. Git remains on `supportiq-hardening` at `817bebb`, with the combined Stage C–F delta uncommitted: 36 modified tracked files, 39 untracked files, and nothing staged.
 
 The exact recommended next stage is **Stage G — Knowledge Issues + Source Health + AI Quality Analytics**: turn existing failure signals into persistent, tenant-scoped operational knowledge issues tied to immutable document versions, with explicit issue lifecycle and version-aware source health. Preserve existing feedback/provenance/evidence gates; replay verification and Reliability Lab remain later phases. **Stage G has not begun.**
 
 ## Stage G — Knowledge Issues and AI quality intelligence
 
-Implemented and validated 2026-09-28 on the authoritative `codex/supportiq-hardening` worktree at `817bebb2fed91d7437fefc85cb94eb9da11f3829`. Before editing, the 75 accumulated dirty/new Stage C–F files were copied to sibling `supportiq-stage-g-baseline` with a manifest. Earlier appendices remain historical records. No commit, push, deployment, production migration or Stage H implementation occurred.
+Implemented and validated 2026-09-28 on the authoritative `supportiq-hardening` worktree at `817bebb2fed91d7437fefc85cb94eb9da11f3829`. Before editing, the 75 accumulated dirty/new Stage C–F files were copied to sibling `supportiq-stage-g-baseline` with a manifest. Earlier appendices remain historical records. No commit, push, deployment, production migration or Stage H implementation occurred.
 
 ### Baseline findings and preserved systems
 
@@ -657,7 +657,7 @@ Migration `20260928010000_knowledge_issues` creates the four domain tables, stat
 
 Deterministic title-derived grouping under-merges paraphrases and may separate the same problem after source-version changes. Shared-source ambiguity is left unattributed, legacy source versions remain unknown, and tiny samples are not reliable comparative evidence. Severity is lifetime recurrence rather than recency/financial risk. Unpersisted failures cannot be reconstructed from historical runs. There is no durable outbox or automatic reconciliation scheduler; operators must run repair passes after outages and for historical data. Workflow history is retained but its UI currently shows the latest 50 entries. Classifier changes need explicit versioned handling. Local provider/Redis/vector validation limits from prior stages remain.
 
-Stage G changes 31 paths relative to the preserved Stage F baseline, including this appendix: one migration/schema; issue classifier/policy/schema/services/routes and maintenance command; post-commit Copilot hooks and membership consistency; shared dashboard analytics; AI Quality UI/API/navigation/styles and client CI step; unit/integration/migration/client tests; and the focused lexical-scope regression fix. Prior uncommitted work remains present. Git remains on `codex/supportiq-hardening` at `817bebb`: 42 modified tracked files, 54 untracked files and nothing staged across the accumulated Stage C–G work. No commit, push or deployment occurred.
+Stage G changes 31 paths relative to the preserved Stage F baseline, including this appendix: one migration/schema; issue classifier/policy/schema/services/routes and maintenance command; post-commit Copilot hooks and membership consistency; shared dashboard analytics; AI Quality UI/API/navigation/styles and client CI step; unit/integration/migration/client tests; and the focused lexical-scope regression fix. Prior uncommitted work remains present. Git remains on `supportiq-hardening` at `817bebb`: 42 modified tracked files, 54 untracked files and nothing staged across the accumulated Stage C–G work. No commit, push or deployment occurred.
 
 The Stage G quality bar is met within these limits: qualifying failures become persistent auditable issues with separate run/ticket counts; staff can review, assign and link a staged knowledge fix; the published candidate relationship is visible and can be deliberately recorded; publication is never described as verified improvement. Version-level observations and explicit denominators support investigation while distinguishing KB, customer-input and operational problems.
 
@@ -669,7 +669,7 @@ The exact next phase is **Stage H — AI Reliability Lab + Historical Replay**: 
 
 Stage H evaluates candidate knowledge and registered AI configurations against immutable support history before customer-facing adoption. Historical ACCEPTED/EDITED/REJECTED feedback remains a human usefulness signal, never an objective accuracy label. Replay cannot send customer messages, create production CopilotRuns/decisions/signals, change ticket state/assignment, or write customer-visible activities. Verification writes only the issue status/revision and its internal history.
 
-Work continued in the existing `codex/supportiq-hardening` worktree at `817bebb2fed91d7437fefc85cb94eb9da11f3829`. Before editing, all **96** accumulated changed/untracked files were copied to sibling `supportiq-stage-h-baseline`, with a manifest and base SHA. The original stale checkout was not edited. Existing Phase 1 and Stages A–G remain preserved; prior sections of this record are unchanged. Nothing was committed, pushed or deployed. Stage I was not started.
+Work continued in the existing `supportiq-hardening` worktree at `817bebb2fed91d7437fefc85cb94eb9da11f3829`. Before editing, all **96** accumulated changed/untracked files were copied to sibling `supportiq-stage-h-baseline`, with a manifest and base SHA. The original stale checkout was not edited. Existing Phase 1 and Stages A–G remain preserved; prior sections of this record are unchanged. Nothing was committed, pushed or deployed. Stage I was not started.
 
 ### Domain and historical baseline
 
@@ -754,7 +754,7 @@ The Stage H quality bar is met within those limits: immutable historical baselin
 - Client: **24 passed / five suites**, including explicit denominator, role visibility and audited verification-count assertions.
 - API TypeScript and client TypeScript/Vite builds, Prisma format/validate/generate, fresh migrations, preserved-history upgrade, demo seed/reseed assertions, offline frozen lockfile and whitespace checks passed. The ~604 kB client bundle warning remains.
 - Artifact logs, before/after preservation evidence, demo result assertions and exact baseline-relative inventory are retained in sibling `supportiq-stage-h-test`; credentials/provider payloads are not logged.
-- Git remains on `codex/supportiq-hardening` at `817bebb`: **42 modified tracked files and 69 untracked files**, nothing staged, across accumulated C–H work. Stage H changes **32 paths** relative to the preserved G baseline. No commit, push or deployment.
+- Git remains on `supportiq-hardening` at `817bebb`: **42 modified tracked files and 69 untracked files**, nothing staged, across accumulated C–H work. Stage H changes **32 paths** relative to the preserved G baseline. No commit, push or deployment.
 
 Stage H paths (earlier-stage files not listed here remain preserved):
 
@@ -794,7 +794,7 @@ Stage H paths (earlier-stage files not listed here remain preserved):
 
 ## Stage I — Production ingestion, recovery and observability
 
-Implementation recorded 2026-09-30 on codex/supportiq-hardening. **Stage I implementation and local acceptance validation are complete:** real Redis/BullMQ, S3-compatible storage and pgvector tests passed. No Stage J work, push or deployment was performed.
+Implementation recorded 2026-09-30 on supportiq-hardening. **Stage I implementation and local acceptance validation are complete:** real Redis/BullMQ, S3-compatible storage and pgvector tests passed. No Stage J work, push or deployment was performed.
 
 ### Checkpoint and scope
 

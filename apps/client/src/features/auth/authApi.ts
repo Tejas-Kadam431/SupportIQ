@@ -12,6 +12,7 @@ export const authApi = api.injectEndpoints({
       query: (body) => ({
         url: "/auth/register",
         method: "POST",
+        timeout: 75000,
         body
       })
     }),
@@ -20,6 +21,7 @@ export const authApi = api.injectEndpoints({
       query: (body) => ({
         url: "/auth/login",
         method: "POST",
+        timeout: 75000,
         body
       })
     }),
@@ -28,6 +30,7 @@ export const authApi = api.injectEndpoints({
       query: () => ({
         url: "/auth/refresh",
         method: "POST",
+        timeout: 10000,
         body: {}
       })
     }),
@@ -36,6 +39,7 @@ export const authApi = api.injectEndpoints({
       query: () => ({
         url: "/auth/logout",
         method: "POST",
+        timeout: 25000,
         body: {}
       })
     }),

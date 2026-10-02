@@ -8,3 +8,14 @@ export function assertDemoResetAllowed(input: NodeJS.ProcessEnv) {
     throw new Error('Demo reset requires a local supportiq_demo, supportiq_test or supportiq_e2e database');
   }
 }
+
+/** Explicit first-time provisioning never permits erasing existing data. */
+export function assertEmptyDemoProvisionAllowed(input: NodeJS.ProcessEnv, rowCounts: number[]) {
+  const url = new URL(input.DATABASE_URL ?? '');
+  if (!input.SUPPORTIQ_PROVISION_EMPTY_DEMO || url.pathname.slice(1) !== input.SUPPORTIQ_PROVISION_EMPTY_DEMO) {
+    throw new Error('Empty demo provisioning requires the exact database name as explicit opt-in');
+  }
+  if (!rowCounts.length || rowCounts.some(count => count !== 0)) {
+    throw new Error('Empty demo provisioning refuses a database containing application data');
+  }
+}

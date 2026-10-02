@@ -6,7 +6,8 @@ import { useAppDispatch } from "../../app/hooks";
 import { setCredentials } from "./authSlice";
 import { useLoginMutation } from "./authApi";
 import { loginFormSchema, type LoginFormInput } from "./schemas";
-import "./auth.css";
+import { AuthShell } from "./AuthShell";
+import { authErrorMessage } from "./authErrorMessage";
 
 const DEMO_CREDENTIALS: LoginFormInput = {
   email: "demo.owner@supportiq.app",
@@ -16,7 +17,9 @@ const DEMO_CREDENTIALS: LoginFormInput = {
 export function LoginPage() {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
-  const [login, { isLoading, error }] = useLoginMutation();
+  const [login, { isLoading }] = useLoginMutation();
+  const [showPassword, setShowPassword] = useState(false);
+  const [activeAction, setActiveAction] = useState<"demo" | "login">("login");
   const [formError, setFormError] = useState<string | null>(null);
 
   const {
@@ -46,17 +49,18 @@ export function LoginPage() {
       );
 
       navigate("/dashboard");
-    } catch {
-      console.warn("SupportIQ operation failed; see the on-screen recovery message.");
-      setFormError("Invalid email or password. Please try again.");
+    } catch (error) {
+      setFormError(authErrorMessage(error, "login"));
     }
   }
 
   async function onSubmit(values: LoginFormInput) {
+    setActiveAction("login");
     await completeLogin(values);
   }
 
   async function handleDemoLogin() {
+    setActiveAction("demo");
     setValue("email", DEMO_CREDENTIALS.email);
     setValue("password", DEMO_CREDENTIALS.password);
 
@@ -64,47 +68,11 @@ export function LoginPage() {
   }
 
   return (
-    <main className="auth-page">
-      <section className="auth-hero">
-        <div className="auth-brand">
-          <img
-            className="auth-logo-image"
-            src="/supportiq-icon-192.png"
-            alt="SupportIQ logo"
-          />
-          <span>SupportIQ</span>
-        </div>
-
-        <div className="auth-hero-content">
-          <p className="auth-eyebrow">AI-powered customer support SaaS</p>
-          <h1>Resolve support tickets faster with AI-assisted workflows.</h1>
-          <p>
-            Manage organizations, tickets, internal notes, knowledge base
-            documents, activity timelines, and AI-generated support replies from
-            one clean workspace.
-          </p>
-        </div>
-
-        <div className="auth-feature-grid">
-          <div>
-            <strong>Multi-tenant support desk</strong>
-            <span>Organizations, members, tickets, and RBAC.</span>
-          </div>
-          <div>
-            <strong>Knowledge base search</strong>
-            <span>Upload docs and search extracted support knowledge.</span>
-          </div>
-          <div>
-            <strong>AI draft replies</strong>
-            <span>Generate customer-ready replies from ticket context.</span>
-          </div>
-        </div>
-      </section>
-
-      <section className="auth-card" aria-label="Login form">
+    <AuthShell>
         <div className="auth-card-header">
+          <p className="auth-card-kicker">YOUR SUPPORT WORKSPACE</p>
           <h2>Welcome back</h2>
-          <p>Login to continue managing customer support tickets.</p>
+          <p>Sign in to pick up where your team left off.</p>
         </div>
 
         <button
@@ -113,14 +81,14 @@ export function LoginPage() {
           onClick={handleDemoLogin}
           disabled={isLoading}
         >
-          {isLoading ? "Opening demo..." : "Try Demo Account"}
+          {isLoading && activeAction === "demo" ? "Opening demo…" : "Try Demo Account"}
         </button>
 
         <div className="auth-divider">
           <span>or login manually</span>
         </div>
 
-        <form className="auth-form" onSubmit={handleSubmit(onSubmit)}>
+        <form className="auth-form" aria-label="Login form" aria-busy={isLoading} onSubmit={handleSubmit(onSubmit)}>
           <div className="auth-field">
             <label htmlFor="email">Email</label>
             <input
@@ -137,27 +105,28 @@ export function LoginPage() {
 
           <div className="auth-field">
             <label htmlFor="password">Password</label>
-            <input
+            <div className="auth-password"><input
               id="password"
               {...register("password")}
-              type="password"
+              type={showPassword ? "text" : "password"}
               placeholder="Enter your password"
               autoComplete="current-password"
-            />
+            /><button type="button" aria-label={showPassword ? "Hide password" : "Show password"} aria-pressed={showPassword} onClick={() => setShowPassword(!showPassword)}>{showPassword ? "Hide" : "Show"}</button></div>
             {errors.password && (
               <p className="auth-error">{errors.password.message}</p>
             )}
           </div>
 
-          {(error || formError) && (
-            <p className="auth-error auth-error-box">
-              {formError ?? "Invalid email or password. Please try again."}
+          {formError && (
+            <p className="auth-error auth-error-box" role="alert">
+              {formError}
             </p>
           )}
 
           <button className="auth-submit-button" disabled={isLoading} type="submit">
-            {isLoading ? "Logging in..." : "Login"}
+            {isLoading && activeAction === "login" ? "Signing in…" : "Login"}
           </button>
+        {isLoading && <p className="auth-field-hint" role="status">Connecting securely. This may take a moment.</p>}
         </form>
 
         <p className="auth-footer-text">
@@ -168,7 +137,6 @@ export function LoginPage() {
           Recruiters can use the demo account to explore a pre-filled SupportIQ
           workspace instantly.
         </p>
-      </section>
-    </main>
+      </AuthShell>
   );
 }
