@@ -1,60 +1,55 @@
 # Render demo recovery
 
-## Verified incident, October 2, 2026
+## Verified recovery, October 2, 2026
 
-The API returned HTTP 500 for the public demo login. Render's latest build failed with Prisma P1001 because its configured PostgreSQL host was unreachable. The last successful API release was 6f5b5e2, while deployment of cd766a2 failed. The dashboard had no active PostgreSQL instance. This is a database/deployment outage, not a bad demo password.
+The original login HTTP 500 was a database/deployment outage: Prisma P1001 reported an unreachable retired PostgreSQL host. No previous database data has been recovered.
 
-With owner approval, a replacement free PostgreSQL 16 database, `supportiq-db`, was created in Singapore. Render reports expiry on **November 1, 2026**. Its internal URL was saved to the API's DATABASE_URL using **Save only**. No production deploy or demo reset was performed. Previous database data has not been recovered.
+With owner approval, a replacement free PostgreSQL 16 database, `supportiq-db`, was created in Singapore. It expires **November 1, 2026**. An initial recovery deployment still encountered the old hostname because the masked environment editor had retained the previous value. DATABASE_URL was corrected and its saved hostname verified before retrying.
 
-The hardened API requires private S3 storage in production. No storage configuration was present in Render. API automatic deploys are temporarily Off until storage and release operations are ready; restore automatic deployment after successful smoke tests. Do not set NODE_ENV=development or disable that requirement to bypass deployment checks.
+Commit `b04ac85` successfully deployed to the API. Existing migrations were applied to the new empty database and synthetic demo data was provisioned once using `SUPPORTIQ_PROVISION_EMPTY_DEMO=supportiq_3qlr`. This guarded mode counts every Prisma application model, refuses a nonempty database, and never resets/deletes data. The one-time provisioning command was removed immediately after success. The original destructive seed guard remains restricted to disposable local development/test databases.
 
-## Configure Cloudflare R2
+## Private storage without R2 billing
 
-1. Sign in to Cloudflare and open **Storage & databases → R2 → Overview**. Complete account/billing setup yourself if requested. R2 has usage-based billing beyond its free allowance; review the current pricing before activation.
-2. Create a **Standard** bucket named `supportiq-knowledge`. Keep public development URLs and custom public domains disabled.
-3. In R2 API Tokens, create an API token with **Object Read & Write**, scoped to this bucket only. Save its Access Key ID and Secret Access Key in your password manager. Do not paste them into GitHub or chat.
-4. Open Render → SupportIQ → Environment → Edit. Add the following variables, entering the two credentials yourself:
+Cloudflare R2 was not activated because the owner declined payment details. The owner created a Supabase Free project, `supportiq-storage`, and an S3 access key. Its private bucket `supportiq-knowledge` has public access disabled. Render uses:
 
 | Variable | Value |
 | --- | --- |
 | KNOWLEDGE_STORAGE | s3 |
 | S3_BUCKET | supportiq-knowledge |
-| S3_REGION | auto |
-| S3_ENDPOINT | https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com |
+| S3_REGION | ap-northeast-2 |
+| S3_ENDPOINT | https://swsxnloizgcojdkxmair.storage.supabase.co/storage/v1/s3 |
 | S3_FORCE_PATH_STYLE | true |
-| AWS_ACCESS_KEY_ID | Your R2 Access Key ID |
-| AWS_SECRET_ACCESS_KEY | Your R2 Secret Access Key |
+| AWS_ACCESS_KEY_ID | Secret stored only in Render |
+| AWS_SECRET_ACCESS_KEY | Secret stored only in Render |
 
-Use **Save only** until the release configuration is ready. The API uses the AWS SDK credential chain. Set the same database, Redis and storage settings on the ingestion worker; run it with `node dist/src/worker.js` from apps/api. The current Render workspace has no worker service, so uploads cannot complete processing until a worker is deployed. Seeded demo knowledge remains inspectable without new uploads.
+The one-time Supabase key screen appeared in browser-tool output. Treat that key as exposed within this chat: the owner must replace it and update Render, then revoke the old key. No credentials are committed here. The project is dedicated to SupportIQ because this S3 key has broad bucket access.
 
-Sources: [R2 S3 setup](https://developers.cloudflare.com/r2/get-started/s3/), [scoped tokens](https://developers.cloudflare.com/r2/api/tokens/), [pricing](https://developers.cloudflare.com/r2/pricing/).
+No ingestion worker exists in the Render workspace. New uploads cannot finish processing until a worker runs with the same database, Redis and storage configuration (`node dist/src/worker.js` from apps/api). Seeded knowledge remains inspectable. Readiness verifies storage connectivity, not the complete upload/processing path; immutable PutObject compatibility and end-to-end uploads remain unverified. Production storage/auth guards were not weakened.
 
-## Release and first-time synthetic demo provisioning
+## Saved release configuration
 
-For this **new empty database only**, migrate once with `pnpm --dir apps/api exec prisma migrate deploy`. Replace the old Render build command that ran `prisma db push` and unconditional reset/seed. Do not baseline a newly empty database or duplicate migrations.
-
-The Render API build command was updated to the normal build below, removing database push and unconditional seed. No release was triggered. Normal build command:
+API build command:
 
 ```sh
-corepack enable && pnpm install --frozen-lockfile && pnpm --dir apps/api db:generate && pnpm --dir apps/api build
+corepack enable && pnpm install --frozen-lockfile && pnpm --dir apps/api db:generate && pnpm --dir apps/api build && pnpm --dir apps/api exec prisma migrate deploy
 ```
 
-Start command: `pnpm --dir apps/api start`. Run migration as a single controlled release operation before starting the API against the new database. On a free service without a pre-deploy step, temporarily append `&& pnpm --dir apps/api exec prisma migrate deploy` to the build command for this single release.
+Start command: `pnpm --dir apps/api start`. No `prisma db push`, unconditional seed, or reset remains. Migration deploy runs as a controlled build step for the current single API service. API automatic deploys remain Off pending credential replacement; releases can be manually triggered. Do not add first-time seed provisioning to repeated builds/startup. If initial provisioning partially fails, inspect/recover the database without relaxing its empty check.
 
-Before routing application traffic to the new database, provision the synthetic demo once:
+## Live verification
 
-```sh
-SUPPORTIQ_PROVISION_EMPTY_DEMO=supportiq_3qlr pnpm --dir apps/api db:seed
-```
+- `/health/live`: 200.
+- `/health/ready`: 200; database, Redis and storage ready.
+- Public demo login and authenticated `/me`: 200.
+- Cookie refresh: 200; replay of consumed cookie: 401.
+- Logout: 200; subsequent refresh: 401.
+- One synthetic registration verification account: 201; its subsequent login/logout: 200. No organization was created for it. Random credentials were not printed or committed.
+- Live frontend **Try Demo Account** reached the dashboard with 21 seeded tickets and Copilot analytics.
 
-The exact database name is explicit opt-in. Every Prisma application model is counted; any existing row aborts provisioning. This mode never calls reset/delete. It is a first-time maintenance operation, not a repeated startup step. If it partially fails, inspect/recover the new database; do not relax the empty check. Remove the provisioning flag/command after success. The original destructive seed remains restricted to disposable local development/test databases.
+Free Render cold starts can still delay requests. The replacement database is temporary and requires migration/replacement before expiry. Storage key replacement and a worker remain outstanding; do not describe all deployment features as complete.
 
-Verify `/health/live`, `/health/ready`, demo login, normal registration/login/logout and cookie refresh. Readiness must pass database, Redis and private storage checks. Verify a controlled upload only after the worker is running. Do not declare the demo repaired based only on a frontend build or database creation.
+## Naming cleanup and code validation
 
-## Naming cleanup
+The active branch is `supportiq-hardening`, PR #2 has a neutral title, and current tracked files contain no Codex naming. Historical merge messages and old snapshots remain in Git history. Ordinary commits do not erase them; removing them requires a separately reviewed history rewrite.
 
-The active branch is `supportiq-hardening`, PR #2 has a neutral title, and current tracked documentation uses neutral checkout descriptions. Historical merge messages and old snapshots remain in Git history. Removing those would require a separately reviewed history rewrite; ordinary commits do not erase historical records.
-
-## Change validation
-
-API TypeScript build passed. Both seed safety tests passed. Client TypeScript, lint and production build passed; all 31 pre-existing/current client tests passed, followed by five focused authentication tests including demo outage recovery and successful retry. The added retry test isolates form resolution because it exercises the direct demo action; schema normalization has separate coverage. Login and registration routes were reviewed in the local browser. The screenshot is `docs/screenshots/auth-refresh.png`. No successful live login or hosted registration has yet been verified.
+API TypeScript build and both seed safety tests passed. Client TypeScript, lint and production build passed; 31 client tests passed, followed by five focused authentication tests including outage recovery/retry. The retry test isolates form resolution for the direct demo action; schema normalization has separate coverage. Refreshed auth UI is recorded in `docs/screenshots/auth-refresh.png`.
