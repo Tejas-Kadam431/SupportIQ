@@ -1,6 +1,38 @@
 # SupportIQ
 
-An evidence-first multi-tenant customer-support intelligence platform that connects human-reviewed AI replies to versioned knowledge fixes and historical verification.
+**SupportIQ** is an AI-powered, multi-tenant customer support SaaS project. Support teams can manage tickets, communicate with customers, search a knowledge base, and review AI-generated reply suggestions. Its distinctive feature is a closed feedback loop: weak or incorrect suggestions become traceable knowledge issues that can be corrected and checked against historical examples.
+
+Built with **React, TypeScript, Node.js/Express, PostgreSQL/pgvector, Prisma, Redis/BullMQ, and Socket.IO**.
+
+## Demo and screenshots
+
+- **[Hosted demo on Render](https://supportiq-client.onrender.com/)** · [API health endpoint](https://supportiq-ns1i.onrender.com/health)
+- **Demo credentials in seeded/read-only environments:** `demo.owner@supportiq.app` / `password123`
+- **[Five-minute product walkthrough](docs/demo.md)** · [Local development](docs/local-development.md)
+
+> **Deployment note:** These Render URLs were published for an earlier iteration of SupportIQ. Their current availability and whether they run the latest code have not been independently verified. The current engineering implementation is documented below; the screenshots are from local acceptance tests with synthetic data. The public demo account, where provisioned, is intentionally read-only.
+
+### Ticket workflow and evidence-based AI suggestions
+
+![SupportIQ ticket and evidence panel](docs/screenshots/stage-j-ticket-evidence.png)
+
+### Versioned knowledge and publication history
+
+![SupportIQ knowledge version history](docs/screenshots/stage-j-version-history.png)
+
+### Knowledge Issues and historical verification
+
+![SupportIQ Knowledge Issues and Reliability Lab](docs/screenshots/stage-j-reliability-lab.png)
+
+[More screenshots and a guided demo](docs/demo.md). [Older UI screenshots](docs/screenshots/) are retained for project history.
+
+## What the project demonstrates
+
+- **Full-stack product development:** multi-tenant workspaces, ticket assignment/status, customer conversations, private staff notes, and dashboards.
+- **Authentication and authorization:** JWT access tokens, cookie-based rotating refresh sessions, organization-scoped RBAC, and customer/staff isolation.
+- **Evidence-first AI:** hybrid PostgreSQL full-text and vector retrieval; source-backed suggestions; explicit abstention on insufficient evidence; human review before messages are sent.
+- **Reliable background work:** private object storage, document versioning, PostgreSQL outbox, Redis/BullMQ workers, retries, and recovery procedures.
+- **Quality and validation:** feedback-driven Knowledge Issues, historical replay with guardrails, unit/integration/browser tests, and documented trade-offs.
 
 ## Why I built it
 
@@ -58,7 +90,7 @@ Use Node 22 and pnpm 10. Install with `pnpm install --frozen-lockfile`, configur
 
 [Deployment readiness](docs/deployment.md) covers runtime separation, migrations, HTTPS, cookies, origins, storage and release checks. [Ingestion operations](docs/ingestion-operations.md) covers recovery. No deployment is performed automatically.
 
-Follow the [five-minute demo](docs/demo.md). The intentionally public read-only identity is demo.owner@supportiq.app / password123 in seeded environments. Mutable staff fixtures belong only in disposable demonstrations. No public deployment URL is claimed.
+Follow the [five-minute demo](docs/demo.md). The read-only demo identity is intentionally public in seeded environments; mutable staff fixtures belong only in disposable local demonstrations. The historical Render links appear above, but a fresh deployment and smoke test are required to confirm the current version works in production.
 
 ## Engineering and learning
 
