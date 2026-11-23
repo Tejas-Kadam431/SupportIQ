@@ -1,5 +1,27 @@
 # Render demo recovery
 
+## Worker and semantic-search completion, November 23, 2026
+
+Commit 15f94bd is deployed. The existing free Render API now runs the same ingestion worker/outbox/reconciler in opt-in embedded mode, with concurrency one and embedding batch one. No paid worker/service was added. Current start command:
+
+```sh
+EMBEDDING_PROVIDER=gemini GEMINI_EMBEDDING_MODEL=gemini-embedding-001 SUPPORTIQ_EMBEDDED_WORKER=true INGESTION_WORKER_CONCURRENCY=1 INGESTION_EMBEDDING_BATCH=1 node apps/api/dist/src/server.js
+```
+
+Direct Node startup avoids downloading pnpm on each runtime start. API and worker share the free instance's resources and sleep together when Render becomes idle. Durable outbox/lease recovery remains in place; this is a demo deployment, not an always-on dedicated worker. Production defaults still permit separate API and worker processes.
+
+Google AI Studio displayed the SupportIQ project as Free tier with billing not set up. A private identifier comparison matched Render's configured Gemini key to that project; no secret was printed. Gemini 1536-dimensional normalized embeddings are now active, with provider-qualified model identity preserved in ingestion, version and replay records. No OpenAI provider was configured or billed for these checks.
+
+Observed live validation:
+
+- Actual private S3 upload, worker processing to READY, explicit publication and lexical retrieval passed in an isolated synthetic owner/workspace.
+- A separate synthetic semantic fixture reached READY with one embedded chunk; published retrieval reported semanticStatus=OK, lexicalStatus=OK and missingEmbeddings=0.
+- All five published AcmeCloud demo documents were rebuilt through the existing admin/version APIs as explicitly derived synthetic snapshots. Each new version processed and was explicitly published with its expected prior publication ID. Old versions remain in history; published chunks, prior AI runs and evaluations were not relabeled or overwritten. Current demo retrieval reports semanticStatus=OK, lexicalStatus=OK, five semantic candidates and zero missing embeddings.
+- A seeded cancellation ticket produced a Gemini ANSWER_SUPPORTED suggestion with source context. Message IDs before/after were identical: generation did not send a customer message.
+- Readiness returned 200 with database, Redis and storage ready. All 239 API unit tests and the API build passed. The local Docker Linux engine was unavailable, so the all-services integration suite was not rerun or claimed green. The live tests establish vector writes/search in this deployment's supportiq schema; the older Stage J custom-schema probe remains historical evidence, not the current live result.
+
+Storage-key rotation is the remaining private handoff: the owner created supportiq-render-2026-11 in Supabase, but Render's saved access ID still matched the older credential when checked. The replacement ID is staged in the unsaved Render editor; the owner must enter its new secret and save, then dependency/upload checks must pass after reload before the old key is revoked. Do not claim credential rotation complete from key creation alone. No secrets are committed here. The old Render database records remain unrecovered; current demo data is synthetic.
+
 ## Verified recovery, November 23, 2026
 
 The expired Render PostgreSQL service is absent. Supabase storage was unavailable while the original supportiq-storage project was paused; the owner restored that project, restoring private storage connectivity. The owner reset the Supabase PostgreSQL password and entered it directly into Render. No new paid service was created.
