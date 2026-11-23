@@ -1,5 +1,7 @@
 # Render demo recovery
 
+The first section is the current live state. Later recovery sections retain earlier checkpoints and their then-outstanding limitations.
+
 ## Worker and semantic-search completion, November 23, 2026
 
 Commit 15f94bd is deployed. The existing free Render API now runs the same ingestion worker/outbox/reconciler in opt-in embedded mode, with concurrency one and embedding batch one. No paid worker/service was added. Current start command:
@@ -20,7 +22,9 @@ Observed live validation:
 - A seeded cancellation ticket produced a Gemini ANSWER_SUPPORTED suggestion with source context. Message IDs before/after were identical: generation did not send a customer message.
 - Readiness returned 200 with database, Redis and storage ready. All 239 API unit tests and the API build passed. The local Docker Linux engine was unavailable, so the all-services integration suite was not rerun or claimed green. The live tests establish vector writes/search in this deployment's supportiq schema; the older Stage J custom-schema probe remains historical evidence, not the current live result.
 
-Storage-key rotation is the remaining private handoff: the owner created supportiq-render-2026-11 in Supabase, but Render's saved access ID still matched the older credential when checked. The replacement ID is staged in the unsaved Render editor; the owner must enter its new secret and save, then dependency/upload checks must pass after reload before the old key is revoked. Do not claim credential rotation complete from key creation alone. No secrets are committed here. The old Render database records remain unrecovered; current demo data is synthetic.
+The owner created supportiq-render-final and privately saved both credentials in Render. A private comparison confirmed the saved access ID matches that final key. Manual deployment dep-dc243c142hec738uiqs0 of e4a4712 applied the saved environment; the new process returned liveness/readiness 200 with database, Redis and storage ready. An actual private upload reached READY with one embedded chunk, was explicitly published, and returned semanticStatus=OK, lexicalStatus=OK and missingEmbeddings=0. Its verification session logged out. Key replacement is verified; revocation of obsolete supportiq-render and unused supportiq-render-2026-11 is still pending owner action. Keep supportiq-render-final. Do not call rotation complete until revocation is observed. No secrets are committed here. The old Render database records remain unrecovered; current demo data is synthetic.
+
+Render's free supportiq-redis instance was changed from allkeys-lru to noeviction after the upload checks completed, retaining the Free plan and persistence Off. The saved policy and Available state were observed. Readiness remained 200, and another isolated real upload completed worker processing, publication and semantic/lexical retrieval with zero missing embeddings after the change; logout returned 200. The free service still has no disk persistence: noeviction prevents memory-pressure eviction, not loss of volatile queue state on restart. Durable processing intent and attempt history remain in PostgreSQL. See ingestion-operations.md for the queue policy and hosting limitations.
 
 ## Verified recovery, November 23, 2026
 
