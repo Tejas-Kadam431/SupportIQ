@@ -847,3 +847,12 @@ README, claim map, architecture/ingestion diagrams, ten ADRs, threat model, eval
 ## Hosted demo recovery — November 23, 2026
 
 The owner restored the original Supabase project and privately reset its database password. The expired/missing Render PostgreSQL dependency was replaced with the existing Supabase PostgreSQL session pooler using TLS and a dedicated supportiq schema; no paid services or application code changes were introduced. Deployment dep-dc2369e8bjmc73b6kmg0 retained the previously live b04ac85 API code, applied the existing thirteen migrations, and completed guarded empty-database synthetic demo provisioning. The one-time seed command was removed from future builds. Health, demo login/dashboard/tickets, registration, refresh replay rejection/logout, lexical knowledge search and demo write denial passed live checks. Semantic embeddings are not configured, custom-schema vector behavior is not claimed verified, and no upload worker was provisioned. Previous Render database records were not recovered. See render-demo-recovery.md for configuration and remaining operational limitations.
+
+
+## Free demo worker and embedding follow-up — November 23, 2026 (validation in progress)
+
+An opt-in SUPPORTIQ_EMBEDDED_WORKER mode reuses the existing BullMQ worker/outbox/reconciler in the API process for one small demo instance. Standalone worker deployment and defaults remain available. Added configurable ingestion concurrency (default unchanged at two), shared non-overlapping maintenance, and drain-on-shutdown.
+
+Added explicit Gemini embedding support using the existing Gemini key, with 1536-dimensional normalized vectors, query/document tasks, bounded requests, strict vector validation, sanitized failures and no provider fallback. Existing OpenAI defaults/identities are unchanged. Ingestion, vector SQL and replay model checks share the selected model identity; published history is not rewritten. No schema migration, auth change, auto-send behavior or new paid service is introduced.
+
+API compilation and all 239 infrastructure-free unit tests passed, including ten focused embedding/lifecycle tests. The installed Docker Desktop application reports running, but its Linux engine pipe is absent; local PostgreSQL/Redis fixtures could not start, so database-backed integration results are not claimed. Live deployment/upload/semantic verification and storage-key rotation remain pending in this entry until observed.

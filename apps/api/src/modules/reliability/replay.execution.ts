@@ -1,3 +1,4 @@
+import { embeddingModelIdentity } from "../knowledge-base/kb.embedding.js";
 import { prisma } from "../../config/prisma.js";
 import { env } from "../../config/env.js";
 import { AppError } from "../../common/errors/AppError.js";
@@ -46,7 +47,7 @@ async function executeBounded(userId: string, orgId: string, id: string) {
     const deadline = Date.now() + 180000;
     try {
         const config = configuration.parse(experiment.configuration);
-        if(config.retrievalVersion !== (config.hybrid ? registry.hybrid : registry.retrievalOnly) || (config.hybrid && config.providerModels.embedding !== env.OPENAI_EMBEDDING_MODEL)) throw new Error("CONFIGURATION_CHANGED");
+        if(config.retrievalVersion !== (config.hybrid ? registry.hybrid : registry.retrievalOnly) || (config.hybrid && config.providerModels.embedding !== embeddingModelIdentity())) throw new Error("CONFIGURATION_CHANGED");
         if (config.generation && (config.providerModels.gemini !== env.GEMINI_MODEL || config.providerModels.openai !== env.OPENAI_MODEL))
             throw new Error('CONFIGURATION_CHANGED');
         for (const row of experiment.suite.cases) {

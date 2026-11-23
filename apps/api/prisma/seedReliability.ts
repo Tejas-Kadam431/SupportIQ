@@ -1,3 +1,4 @@
+import { embeddingModelIdentity } from "../src/modules/knowledge-base/kb.embedding.js";
 import { PrismaClient } from '@prisma/client';
 import { createSeedKnowledge } from './seedKnowledge.js';
 import { contentHash } from '../src/common/utils/contentHash.js';
@@ -32,7 +33,7 @@ export async function seedReliabilityLab(db: PrismaClient, orgId: string, ownerI
     const suite = await db.evaluationSuite.create({ data: { organizationId: orgId, issueId: issue.id, name: 'DEMO — 6 failure cases + 10 guardrails (illustrative)', actorIdentity: ownerId, sampling: { source: 'SEEDED_ILLUSTRATION', failureCount: 6, guardrailCount: 10 }, cases: { create: cases } }, include: { cases: true } });
     async function execute(versionId: string, purpose: 'PRE_PUBLICATION' | 'POST_PUBLICATION_VERIFICATION', name: string) {
         const versions = await db.knowledgeDocumentVersion.findMany({ where: { OR: [{ id: versionId }, { status: 'PUBLISHED', document: { organizationId: orgId, id: { not: doc.id }, archivedAt: null } }] } });
-        const config = { ...registry, generation: false, hybrid: false, illustrative: true, providerModels: { gemini: env.GEMINI_MODEL, openai: env.OPENAI_MODEL, embedding: env.OPENAI_EMBEDDING_MODEL }, retrievalVersion: registry.retrievalOnly };
+        const config = { ...registry, generation: false, hybrid: false, illustrative: true, providerModels: { gemini: env.GEMINI_MODEL, openai: env.OPENAI_MODEL, embedding: embeddingModelIdentity() }, retrievalVersion: registry.retrievalOnly };
         const e = await db.evaluationExperiment.create({ data: { organizationId: orgId, suiteId: suite.id, name, purpose, actorIdentity: ownerId, configuration: json(config), summary: { total: 16, completed: 0 }, scope: { create: versions.map(v => ({ documentVersionId: v.id, override: v.id === versionId, contentHash: v.contentHash! })) } } });
         await db.evaluationExperiment.update({ where: { id: e.id }, data: { status: 'RUNNING', startedAt: new Date() } });
         const results: Array<Awaited<ReturnType<typeof runEvaluationCase>> & {

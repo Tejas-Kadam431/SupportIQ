@@ -25,6 +25,10 @@ const envSchema = z.object({
 
   OPENAI_API_KEY: optionalNonEmptyString,
 
+  EMBEDDING_PROVIDER: z.enum(["openai", "gemini"]).default("openai"),
+  GEMINI_EMBEDDING_MODEL: z.string().regex(/^[a-zA-Z0-9._-]+$/).default("gemini-embedding-001"),
+  SUPPORTIQ_EMBEDDED_WORKER: z.enum(["true", "false"]).default("false"),
+
   OPENAI_MODEL: z.preprocess(
     (value) => (value === "" || value === undefined ? "gpt-4o-mini" : value),
     z.string()

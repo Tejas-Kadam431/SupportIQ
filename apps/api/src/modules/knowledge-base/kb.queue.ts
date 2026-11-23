@@ -26,7 +26,7 @@ export function startKnowledgeProcessingWorker() {
                 throw new UnrecoverableError(failure.category);
             throw failure;
         }
-    }, { connection: redisConnection, concurrency: 2 });
+    }, { connection: redisConnection, concurrency: ingestionConfig.INGESTION_WORKER_CONCURRENCY });
     worker.on("error", () => log("worker.error", { category: "QUEUE_UNAVAILABLE" }));
     worker.on("failed", job => log("worker.failed", { jobId: job?.id, knowledgeVersionId: job?.data.versionId }));
     return worker;

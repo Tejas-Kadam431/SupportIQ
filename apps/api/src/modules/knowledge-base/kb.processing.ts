@@ -5,7 +5,7 @@ import { validateKnowledgeBytes } from "./kb.validation.js";
 import { saveKnowledgeChunkEmbedding } from "./kb.vector.js";
 import { lockDocument, knowledgeActivity } from "./kb.version.service.js";
 import { contentHash } from "../../common/utils/contentHash.js";
-import { env } from "../../config/env.js";
+import { embeddingConfigured, embeddingModelIdentity } from "./kb.embedding.js";
 import { ingestionConfig as config } from "../../config/ingestion.js";
 import { randomUUID } from "node:crypto";
 import { getObjectStorage } from "../../common/storage.js";
@@ -75,17 +75,17 @@ export async function processKnowledgeDocument(orgId: string, documentId: string
                 throw new IngestionFailure("SOURCE_CHANGED", false);
             if (!existing.length)
                 await tx.knowledgeChunk.createMany({ data: chunks.map(c => ({ ...c, documentId, documentVersionId: versionId, organizationId: orgId, contentHash: contentHash(c.content) })) });
-            if (version.embeddingModel && version.embeddingModel !== env.OPENAI_EMBEDDING_MODEL)
+            if (version.embeddingModel && version.embeddingModel !== embeddingModelIdentity())
                 throw new IngestionFailure("INDEX_INCOMPLETE", false);
-            await tx.knowledgeDocumentVersion.update({ where: { id: versionId }, data: { embeddingModel: env.OPENAI_API_KEY ? env.OPENAI_EMBEDDING_MODEL : null } });
-            await tx.knowledgeIngestion.update({ where: { versionId }, data: { chunksTotal: chunks.length, embeddingModel: env.OPENAI_API_KEY ? env.OPENAI_EMBEDDING_MODEL : null } });
+            await tx.knowledgeDocumentVersion.update({ where: { id: versionId }, data: { embeddingModel: embeddingConfigured() ? embeddingModelIdentity() : null } });
+            await tx.knowledgeIngestion.update({ where: { versionId }, data: { chunksTotal: chunks.length, embeddingModel: embeddingConfigured() ? embeddingModelIdentity() : null } });
             return existing.length ? existing : tx.knowledgeChunk.findMany({ where: { documentVersionId: versionId }, orderBy: { chunkIndex: "asc" } });
         });
         await heartbeat("EMBEDDING");
         let count = 0;
-        if (!env.OPENAI_API_KEY && config.INGESTION_REQUIRE_SEMANTIC === "true")
+        if (!embeddingConfigured() && config.INGESTION_REQUIRE_SEMANTIC === "true")
             throw new IngestionFailure("EMBEDDING_PROVIDER_FAILED", true);
-        if (env.OPENAI_API_KEY) {
+        if (embeddingConfigured()) {
             for (let offset = 0; offset < created.length; offset += config.INGESTION_EMBEDDING_BATCH) {
                 if (leaseLost)
                     throw new IngestionFailure("PROCESSING_STALE", true);
@@ -99,16 +99,16 @@ export async function processKnowledgeDocument(orgId: string, documentId: string
         }
         await heartbeat("INDEXING");
         await fenced(async (tx) => {
-            if (await tx.knowledgeChunk.count({ where: { documentVersionId: versionId } }) !== chunks.length || (env.OPENAI_API_KEY && count !== chunks.length))
+            if (await tx.knowledgeChunk.count({ where: { documentVersionId: versionId } }) !== chunks.length || (embeddingConfigured() && count !== chunks.length))
                 throw new IngestionFailure("INDEX_INCOMPLETE", true);
-            if (env.OPENAI_API_KEY) {
+            if (embeddingConfigured()) {
                 const indexed = await tx.$queryRaw<Array<{
                     count: number;
                 }>> `SELECT count(*)::int AS count FROM "KnowledgeChunk" WHERE "documentVersionId"=${versionId} AND embedding IS NOT NULL`;
                 if (indexed[0]?.count !== chunks.length)
                     throw new IngestionFailure("INDEX_INCOMPLETE", true);
             }
-            await tx.knowledgeDocumentVersion.update({ where: { id: versionId }, data: { status: "READY", extractedText: text, contentHash: contentHash(text), semanticIndexedChunks: count, embeddingModel: count ? env.OPENAI_EMBEDDING_MODEL : null, processingToken: null, leaseUntil: null, errorMessage: null } });
+            await tx.knowledgeDocumentVersion.update({ where: { id: versionId }, data: { status: "READY", extractedText: text, contentHash: contentHash(text), semanticIndexedChunks: count, embeddingModel: count ? embeddingModelIdentity() : null, processingToken: null, leaseUntil: null, errorMessage: null } });
             await tx.knowledgeIngestion.update({ where: { versionId }, data: { stage: "READY", completedAt: new Date(), chunksEmbedded: count, lexicalReady: true, semanticReady: count === chunks.length } });
             await tx.knowledgeIngestionAttempt.update({ where: { id: token }, data: { stage: "READY", completedAt: new Date(), durationMs: Date.now() - started } });
             await knowledgeActivity(tx, orgId, null, documentId, versionId, version.versionNumber, "VERSION_PROCESSING_COMPLETED");

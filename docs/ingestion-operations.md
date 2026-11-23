@@ -6,7 +6,7 @@ Stage I implementation. Do not treat configuration validation as proof of a succ
 
 The modular monolith has two commands, sharing PostgreSQL, Redis and the configured private object store:
 
-- API: pnpm --dir apps/api start (HTTP and Socket.IO; no ingestion worker).
+- API: pnpm --dir apps/api start (HTTP and Socket.IO; no ingestion worker by default).
 - Worker: pnpm --dir apps/api start:worker (BullMQ concurrency 2, outbox dispatcher and reconciler).
 - Build both: pnpm --dir apps/api build. Migrate once before either runtime.
 - Development: dev and dev:worker from apps/api. Use the same storage configuration in both processes.
@@ -99,3 +99,16 @@ Local endpoints are PostgreSQL 127.0.0.1:55441, Redis 127.0.0.1:55440 and S3 htt
 CI enables SUPPORTIQ_TEST_PGVECTOR, SUPPORTIQ_TEST_REDIS and SUPPORTIQ_TEST_S3 explicitly and supplies S3_TEST_ENDPOINT. It runs migrations, builds, unit, PostgreSQL/BullMQ/S3/vector integration and client tests. Normal CI uses mocked paid providers. Local service tests intentionally skip unless those flags and services are present. A skipped test is not a pass.
 
 Before production sign-off: execute the entire mandatory service suite, the 100+ chunk mocked-embedding benchmark, actual S3 provider smoke test with scoped credentials, worker crash/restart drill and deployment shutdown/readiness checks. No deployment or push was performed during this stage.
+
+
+## Free single-instance demo option (November 2026)
+
+Set SUPPORTIQ_EMBEDDED_WORKER=true only for a single-instance demo that cannot provision a dedicated worker. The existing API process starts the same BullMQ worker, outbox dispatcher and reconciler; the separate worker entrypoint remains the production default. Set INGESTION_WORKER_CONCURRENCY=1 and INGESTION_EMBEDDING_BATCH=1 on the small free instance. API and worker share CPU/memory and both stop when Render sleeps; pending durable work resumes/reconciles after traffic wakes the API. This is not an always-on worker or production resource isolation. Do not run an additional standalone worker accidentally when measuring the demo resource budget.
+
+Shutdown stops HTTP intake, drains in-flight maintenance, then closes BullMQ/Redis and Prisma under the existing deadline. Maintenance ticks cannot overlap. The dedicated worker uses the same lifecycle module.
+
+EMBEDDING_PROVIDER defaults to openai, retaining OPENAI_API_KEY and the existing OPENAI_EMBEDDING_MODEL identity. To use an explicitly confirmed Gemini Free tier project, set EMBEDDING_PROVIDER=gemini and GEMINI_EMBEDDING_MODEL=gemini-embedding-001; it uses the existing GEMINI_API_KEY. Google free-tier project status must be checked before live calls; selecting a free-tier-capable model does not force a billed project to be free. Free-tier provider terms apply to submitted text. No paid-provider fallback is used for embedding failures.
+
+Gemini requests are TLS-only, ten-second bounded, text-bounded, and use RETRIEVAL_DOCUMENT versus RETRIEVAL_QUERY tasks. Output must contain exactly 1536 finite nonzero values and is normalized. Provider/model/dimension identity is recorded as gemini/gemini-embedding-001/1536 in ingestion/version/replay metadata and SQL filtering. Old OpenAI vectors and historical replay configurations are not relabeled. A changed provider requires a new version and explicit publication; old published chunks/history must not be rewritten to make the demo look indexed.
+
+Provider references: https://ai.google.dev/gemini-api/docs/embeddings and https://ai.google.dev/gemini-api/docs/pricing#gemini-embedding. Hosting constraints: https://render.com/docs/free.

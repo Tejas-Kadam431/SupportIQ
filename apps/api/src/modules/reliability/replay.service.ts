@@ -1,3 +1,4 @@
+import { embeddingModelIdentity } from "../knowledge-base/kb.embedding.js";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../../config/prisma.js";
 import { AppError } from "../../common/errors/AppError.js";
@@ -68,7 +69,7 @@ export async function createExperiment(userId: string, orgId: string, input: unk
         if (versions.some(v => !v.contentHash))
             throw new AppError('Candidate scope has incomplete content provenance', 409);
         // Publication uses the same organization lock. Scope rows then pin immutable content in PostgreSQL.
-        return tx.evaluationExperiment.create({ data: { organizationId: orgId, suiteId: suite.id, name: command.name, purpose: command.purpose, actorIdentity: userId, summary: { total: suite._count.cases, completed: 0 }, configuration: json({ ...registry, generation: command.generation, hybrid: command.hybrid, providerModels: { gemini: env.GEMINI_MODEL, openai: env.OPENAI_MODEL, embedding: env.OPENAI_EMBEDDING_MODEL }, retrievalVersion: command.hybrid ? registry.hybrid : registry.retrievalOnly, providerCallEstimate: { embeddings: command.hybrid ? suite._count.cases : 0, generationMaximum: command.generation ? suite._count.cases * 2 : 0 }, issueRevision: suite.issue?.revision ?? null }), scope: { create: versions.map(v => ({ documentVersionId: v.id, override: command.overrideVersionIds.includes(v.id), contentHash: v.contentHash! })) } }, include: { scope: true } });
+        return tx.evaluationExperiment.create({ data: { organizationId: orgId, suiteId: suite.id, name: command.name, purpose: command.purpose, actorIdentity: userId, summary: { total: suite._count.cases, completed: 0 }, configuration: json({ ...registry, generation: command.generation, hybrid: command.hybrid, providerModels: { gemini: env.GEMINI_MODEL, openai: env.OPENAI_MODEL, embedding: embeddingModelIdentity() }, retrievalVersion: command.hybrid ? registry.hybrid : registry.retrievalOnly, providerCallEstimate: { embeddings: command.hybrid ? suite._count.cases : 0, generationMaximum: command.generation ? suite._count.cases * 2 : 0 }, issueRevision: suite.issue?.revision ?? null }), scope: { create: versions.map(v => ({ documentVersionId: v.id, override: command.overrideVersionIds.includes(v.id), contentHash: v.contentHash! })) } }, include: { scope: true } });
     }, { timeout: 15000 });
 }
 export async function listExperiments(userId: string, orgId: string, input: unknown) {
