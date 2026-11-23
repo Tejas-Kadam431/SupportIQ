@@ -1,5 +1,19 @@
 # Render demo recovery
 
+## Verified recovery, November 23, 2026
+
+The expired Render PostgreSQL service is absent. Supabase storage was unavailable while the original supportiq-storage project was paused; the owner restored that project, restoring private storage connectivity. The owner reset the Supabase PostgreSQL password and entered it directly into Render. No new paid service was created.
+
+The API now uses PostgreSQL in the existing Supabase project through its session pooler on port 5432, TLS required, connection_limit=3, and a dedicated supportiq schema. Keeping application tables outside public avoids exposing them through the default public Data API schema. No Data API schema exposure or permissions were broadened. Existing storage-managed schemas were retained.
+
+Controlled recovery deployment dep-dc2369e8bjmc73b6kmg0 uses the same application commit as the previous live API, b04ac855f11c4cbd5a66ee323b3d242ee533b356. GitHub main has since advanced to 79bb000 with documentation/README changes only; those were not overwritten. All thirteen existing migrations applied successfully, then the guarded empty-application-database seed completed. The opt-in used the exact database name postgres; application-model counts gate provisioning and no reset/delete ran. Twenty-one synthetic demo tickets were restored. This is fresh demo data, not recovery of the deleted Render database's previous records.
+
+The temporary seed command was removed and the normal migration-only build command below was verified saved. API automatic deploys remain Off. Future builds must not repeat first-time seeding.
+
+Live checks: liveness/readiness 200; database, Redis and storage ready; demo login/me/organizations/dashboard/tickets/knowledge documents 200; knowledge search 200 with two lexical results; demo ticket writes denied 403. Refresh rotation returned 200 and consumed-cookie replay 401; logout returned 200 and subsequent refresh 401. The live frontend Try Demo Account button reached the seeded dashboard successfully. One synthetic verification account registered with 201 and logged in/out with 200; random credentials were not printed or committed.
+
+Knowledge search reports DEGRADED with semanticStatus=NOT_CONFIGURED and lexicalStatus=OK. Semantic embeddings are not configured. The earlier custom-schema pgvector limitation in the Stage J record remains relevant: this recovery establishes migrations, auth, dashboard and lexical retrieval in supportiq, not a validated semantic/vector upload pipeline. No ingestion worker was added, and uploads/background processing remain outside this recovery. Supabase inactivity pausing and Render cold starts still apply. The previously recorded S3 key replacement remains outstanding; resetting the database password does not rotate the S3 key.
+
 ## Verified recovery, October 2, 2026
 
 The original login HTTP 500 was a database/deployment outage: Prisma P1001 reported an unreachable retired PostgreSQL host. No previous database data has been recovered.
